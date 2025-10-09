@@ -1,0 +1,8 @@
+{
+  "name": "Bot-A-Boat",
+  "tree": {
+    "$className": "DataModel",
+    "ServerScriptService": { "$path": "src/server" },
+    "ReplicatedStorage": { "$path": "src/shared" }
+  }
+}

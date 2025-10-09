@@ -1,0 +1,14 @@
+# Roblox + Rojo
+*.rbxlx
+*.rbxm
+*.rbxl
+*.rbxmx
+*.lock
+*.sublime-workspace
+*.sublime-project
+
+# Wally packages
+Packages/
+
+# Aftman + local
+.aftman/
