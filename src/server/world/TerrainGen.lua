@@ -31,25 +31,53 @@ local function scatterRocks()
 
     local cfg = WorldConfig.ROCK_REGION
     local minR, maxR = WorldConfig.ROCK_RADIUS_RANGE.X, WorldConfig.ROCK_RADIUS_RANGE.Y
+    local minSpacing = WorldConfig.ROCK_MIN_SPACING or 30
+
     local function rand(a,b) return a + math.random()*(b-a) end
+    local placed = {}
+
+    local function isFarEnough(x, z)
+        for _,pt in ipairs(placed) do
+            local dx = x - pt.x
+            local dz = z - pt.z
+            if (dx*dx + dz*dz) < (minSpacing * minSpacing) then
+                return false
+            end
+        end
+        return true
+    end
 
     for _ = 1, WorldConfig.ROCK_COUNT do
-        local r = rand(minR, maxR)
-        local p = Instance.new("Part")
-        p.Shape = Enum.PartType.Ball
-        p.Material = Enum.Material.Rock
-        p.Color = Color3.fromRGB(110,108,104)
-        p.Size = Vector3.new(r*2, r*2, r*2)
-        p.Anchored = true
-        p.CanCollide = true
-        p.Name = "Rock"
-        local x = rand(cfg.xMin, cfg.xMax)
-        local z = rand(cfg.zMin, cfg.zMax)
-        local y = cfg.y - r * 0.4 -- slightly embedded
-        p.CFrame = CFrame.new(x, y, z)
-        p.Parent = folder
+        local tries = 0
+        local ok, x, z = false, nil, nil
+        while tries < 40 do
+            tries += 1
+            local candX = rand(cfg.xMin, cfg.xMax)
+            local candZ = rand(cfg.zMin, cfg.zMax)
+            if isFarEnough(candX, candZ) then
+                ok, x, z = true, candX, candZ
+                break
+            end
+        end
+        if ok then
+            local r = rand(minR, maxR)
+            local p = Instance.new("Part")
+            p.Shape = Enum.PartType.Ball
+            p.Material = Enum.Material.Rock
+            p.Color = Color3.fromRGB(110,108,104)
+            p.Size = Vector3.new(r*2, r*2, r*2)
+            p.Anchored = true
+            p.CanCollide = true
+            p.Name = "Rock"
+            -- Sink slightly so it looks embedded
+            local y = cfg.y - r * 0.4
+            p.CFrame = CFrame.new(x, y, z)
+            p.Parent = folder
+            table.insert(placed, {x = x, z = z})
+        end
     end
 end
+
 
 local function placeSpawn()
     local spawn = Workspace:FindFirstChild("LandSpawn") or Instance.new("SpawnLocation")

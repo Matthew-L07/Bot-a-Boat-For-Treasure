@@ -10,41 +10,51 @@ function SimpleBoat.create(ownerUserId)
     model.Name = Constants.BOAT_NAME_PREFIX .. tostring(ownerUserId)
     model:SetAttribute(Constants.BOAT_OWNER_ATTR, ownerUserId)
 
+    -- === Hull ===
     local hull = Instance.new("Part")
     hull.Name = "Hull"
     hull.Size = BOAT.HullSize
     hull.Material = Enum.Material.WoodPlanks
     hull.Color = Color3.fromRGB(200, 160, 90)
-    hull.Anchored = true -- anchor while assembling / positioning
-    hull.CanCollide = true
     hull.TopSurface = Enum.SurfaceType.Smooth
     hull.BottomSurface = Enum.SurfaceType.Smooth
-    hull.CustomPhysicalProperties = PhysicalProperties.new(0.6, 0.4, 0.5)
+    -- Density for good buoyancy - lighter floats better
+    hull.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.5, 1, 1)
+    hull.CanCollide = true
+    hull.Anchored = true
     hull.Parent = model
 
+    -- === Seat (driver) ===
     local seat = Instance.new("VehicleSeat")
     seat.Name = "Helm"
-    seat.Anchored = true
+    seat.Size = Vector3.new(2, 0.5, 2)
     seat.CanCollide = true
     seat.MaxSpeed = 0
     seat.TurnSpeed = 0
+    seat.Anchored = true
+    seat.Material = Enum.Material.Wood
+    seat.Color = Color3.fromRGB(139, 90, 43)
     seat.Parent = model
+    
+    -- Position seat on top-back of hull
+    local seatOffset = CFrame.new(0, BOAT.HullSize.Y/2 + 0.75, BOAT.HullSize.Z/2 - 1.5)
+    seat.CFrame = hull.CFrame * seatOffset
 
-    -- seat at rear-center
-    seat.CFrame = hull.CFrame * CFrame.new(0, 1.25, BOAT.HullSize.Z/2 - 2)
-
+    -- Weld seat to hull
     local weld = Instance.new("WeldConstraint")
     weld.Part0 = hull
     weld.Part1 = seat
-    weld.Parent = model
+    weld.Parent = hull
 
     model.PrimaryPart = hull
 
-    -- Force/torque setup
+    -- === Physics Setup ===
     local rootAttach = Instance.new("Attachment")
     rootAttach.Name = "RootAttachment"
+    rootAttach.Position = Vector3.new(0, 0, 0)
     rootAttach.Parent = hull
 
+    -- Thrust force
     local thrust = Instance.new("VectorForce")
     thrust.Name = "Thrust"
     thrust.Attachment0 = rootAttach
@@ -53,21 +63,30 @@ function SimpleBoat.create(ownerUserId)
     thrust.Force = Vector3.zero
     thrust.Parent = hull
 
-    local gyro = Instance.new("AngularVelocity")
-    gyro.Name = "Yaw"
-    gyro.Attachment0 = rootAttach
-    gyro.MaxTorque = math.huge
-    gyro.RelativeTo = Enum.ActuatorRelativeTo.Attachment0
-    gyro.AngularVelocity = Vector3.zero
-    gyro.Parent = hull
+    -- Torque for turning (uses AngularVelocity for smooth rotation)
+    local angVel = Instance.new("AngularVelocity")
+    angVel.Name = "TurnControl"
+    angVel.Attachment0 = rootAttach
+    angVel.RelativeTo = Enum.ActuatorRelativeTo.World
+    angVel.MaxTorque = 100000
+    angVel.AngularVelocity = Vector3.zero
+    angVel.Parent = hull
 
-    local lin = Instance.new("LinearVelocity")
-    lin.Attachment0 = rootAttach
-    lin.RelativeTo = Enum.ActuatorRelativeTo.World
-    lin.MaxForce = 0
-    lin.VectorVelocity = Vector3.zero
-    lin.Parent = hull
+    -- Alignment to keep boat upright (only stabilizes roll/pitch, not yaw)
+    local align = Instance.new("AlignOrientation")
+    align.Name = "Upright"
+    align.Attachment0 = rootAttach
+    align.Mode = Enum.OrientationAlignmentMode.OneAttachment
+    align.Responsiveness = 20
+    align.MaxAngularVelocity = 5
+    align.MaxTorque = 30000
+    align.AlignType = Enum.AlignType.PrimaryAxisPerpendicular
+    align.PrimaryAxisOnly = true
+    align.PrimaryAxis = Vector3.new(0, 1, 0)  -- Keep Y-axis up
+    align.Parent = hull
+    align.CFrame = CFrame.new()
 
+    -- Tunables
     model:SetAttribute("MaxThrust", BOAT.MaxThrust)
     model:SetAttribute("TurnTorque", BOAT.TurnTorque)
     model:SetAttribute("LinearDrag", BOAT.LinearDrag)
