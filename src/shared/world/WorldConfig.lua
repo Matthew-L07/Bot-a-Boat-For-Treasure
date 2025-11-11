@@ -11,7 +11,7 @@ local BASE_SURFACE_Y = WorldConfig.BASE_CENTER.Y + WorldConfig.BASE_SIZE.Y * 0.5
 -- === River geometry (water surface == ground surface) ===
 WorldConfig.RIVER_WIDTH   = 120         -- was 48
 WorldConfig.RIVER_LENGTH  = 2000        -- was 420
-WorldConfig.WATER_DEPTH   = 18          -- a hair deeper for a bigger river
+WorldConfig.WATER_DEPTH   = 5           -- SHALLOW - players can stand!
 
 local RIVER_TOP_Y    = BASE_SURFACE_Y
 local RIVER_BOTTOM_Y = BASE_SURFACE_Y - WorldConfig.WATER_DEPTH
@@ -25,6 +25,24 @@ WorldConfig.WATER_SURFACE_Y = RIVER_TOP_Y
 local upstreamZ = -(WorldConfig.RIVER_LENGTH * 0.5) + 120
 WorldConfig.PLAYER_SPAWN     = CFrame.new(-100, BASE_SURFACE_Y + 15, upstreamZ)
 WorldConfig.BOAT_WATER_SPAWN = CFrame.new(0, WorldConfig.WATER_SURFACE_Y + 2.0, upstreamZ + 20)
+
+-- === RIVER CURRENT ===
+-- The current flows SIDEWAYS (along X-axis) to push boats side-to-side
+WorldConfig.CURRENT_ENABLED = true
+WorldConfig.CURRENT_DIRECTION = Vector3.new(-1, 0, 0)  -- Flows in +X direction (left to right)
+-- ADJUST THIS to control current strength:
+-- Values: 0 = no current, 500 = gentle, 1500 = moderate, 3000+ = strong
+WorldConfig.CURRENT_STRENGTH = 2000  -- Strong sideways push (increased for visibility)
+
+-- Current region (where the current applies)
+WorldConfig.CURRENT_REGION = {
+    xMin = -WorldConfig.RIVER_WIDTH * 0.5,
+    xMax = WorldConfig.RIVER_WIDTH * 0.5,
+    yMin = RIVER_BOTTOM_Y,
+    yMax = RIVER_TOP_Y + 5,  -- Slightly above water surface
+    zMin = -WorldConfig.RIVER_LENGTH * 0.5,
+    zMax = WorldConfig.RIVER_LENGTH * 0.5,
+}
 
 -- === Rocks (sparse, inside the wet channel) ===
 WorldConfig.ROCK_COUNT        = 16                         -- sparse across 2km
@@ -47,7 +65,7 @@ do
 end
 
 -- === Water visuals ===
-WorldConfig.WATER_TRANSPARENCY = 0.2
+WorldConfig.WATER_TRANSPARENCY = 0.4  -- More transparent for shallow water
 WorldConfig.WATER_REFLECTANCE  = 0.1
 WorldConfig.WATER_WAVE_SIZE    = 0.15
 WorldConfig.WATER_WAVE_SPEED   = 8.0

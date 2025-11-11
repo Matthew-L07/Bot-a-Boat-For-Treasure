@@ -63,6 +63,18 @@ function SimpleBoat.create(ownerUserId)
     thrust.Force = Vector3.zero
     thrust.Parent = hull
 
+    -- Current force (will be controlled by CurrentService)
+    local currentForce = Instance.new("VectorForce")
+    currentForce.Name = "CurrentForce"
+    currentForce.Attachment0 = rootAttach
+    currentForce.ApplyAtCenterOfMass = true
+    currentForce.RelativeTo = Enum.ActuatorRelativeTo.World
+    currentForce.Force = Vector3.zero
+    currentForce.Enabled = true
+    currentForce.Parent = hull
+    
+    print("[SimpleBoat] Created boat with CurrentForce for user", ownerUserId)
+
     -- Torque for turning (uses AngularVelocity for smooth rotation)
     local angVel = Instance.new("AngularVelocity")
     angVel.Name = "TurnControl"
