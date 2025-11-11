@@ -1,0 +1,1 @@
+-- Intentionally empty. Character spawns on land; boat is auto-spawned in water.

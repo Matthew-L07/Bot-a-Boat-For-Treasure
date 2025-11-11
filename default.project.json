@@ -2,7 +2,16 @@
   "name": "Bot-A-Boat",
   "tree": {
     "$className": "DataModel",
-    "ServerScriptService": { "$path": "src/server" },
-    "ReplicatedStorage": { "$path": "src/shared" }
+    "ReplicatedStorage": {
+      "$path": "src/shared"
+    },
+    "ServerScriptService": {
+      "$path": "src/server"
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "$path": "src/client"
+      }
+    }
   }
 }
