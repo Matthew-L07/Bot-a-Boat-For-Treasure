@@ -69,7 +69,7 @@ local function spawnBoatFor(player)
     end
 
     -- Zero initial velocities
-    local hull = boat:FindFirstChild("Hull")
+    local hull = boat:FindFirstChild("CenterBlock") or boat:FindFirstChild("Hull")
     if hull and hull:IsA("BasePart") then
         hull.AssemblyLinearVelocity = Vector3.zero
         hull.AssemblyAngularVelocity = Vector3.zero
@@ -103,7 +103,7 @@ local function startController()
             -- Skip docked boats
             if DockService and DockService.isBoatDocked(boat) then continue end
             
-            local hull = boat:FindFirstChild("Hull")
+            local hull = boat:FindFirstChild("CenterBlock") or boat:FindFirstChild("Hull")
             local seat = boat:FindFirstChild("Helm")
             if not (hull and hull:IsA("BasePart") and seat and seat:IsA("VehicleSeat")) then continue end
 

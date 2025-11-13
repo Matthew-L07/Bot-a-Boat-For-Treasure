@@ -32,7 +32,8 @@ local function startCurrentSystem()
             if not boat:IsA("Model") then continue end
             if not boat:GetAttribute(Constants.BOAT_OWNER_ATTR) then continue end
             
-            local hull = boat:FindFirstChild("Hull")
+            -- Find the main hull (CenterBlock or Hull for backwards compatibility)
+            local hull = boat:FindFirstChild("CenterBlock") or boat:FindFirstChild("Hull")
             if not (hull and hull:IsA("BasePart")) then continue end
             if hull.Anchored then continue end
             

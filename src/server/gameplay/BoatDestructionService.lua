@@ -1,6 +1,7 @@
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
+local Players = game:GetService("Players")
 
 local Constants = require(ReplicatedStorage:WaitForChild("Constants"))
 
@@ -49,6 +50,82 @@ local function createBreakEffect(position)
     breakSound:Play()
 end
 
+local function ejectPlayer(seat)
+    -- Eject any player sitting in the seat
+    if seat and seat:IsA("VehicleSeat") then
+        local occupant = seat.Occupant
+        if occupant then
+            local humanoid = occupant
+            humanoid.Sit = false
+            
+            -- Give player upward velocity to "jump" off
+            local character = humanoid.Parent
+            if character then
+                local hrp = character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    hrp.AssemblyLinearVelocity = Vector3.new(
+                        math.random(-10, 10),
+                        20,
+                        math.random(-10, 10)
+                    )
+                end
+            end
+        end
+    end
+end
+
+local function getRemainingBlocks(boat)
+    local count = 0
+    for _, part in ipairs(boat:GetDescendants()) do
+        if part:IsA("BasePart") and part:GetAttribute("BoatPiece") and not part:GetAttribute("Broken") then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function findNewCenterBlock(boat)
+    -- Find any remaining unbroken block to be the new center
+    for _, part in ipairs(boat:GetDescendants()) do
+        if part:IsA("BasePart") and part:GetAttribute("BoatPiece") and not part:GetAttribute("Broken") then
+            return part
+        end
+    end
+    return nil
+end
+
+local function transferPhysicsToNewCenter(boat, oldCenter, newCenter)
+    -- Move all physics components from old center to new center
+    print("[BoatDestruction] Transferring physics from", oldCenter.Name, "to", newCenter.Name)
+    
+    -- Create new attachment on new center
+    local newAttach = Instance.new("Attachment")
+    newAttach.Name = "RootAttachment"
+    newAttach.Parent = newCenter
+    
+    -- Move all constraints to new center
+    for _, child in ipairs(oldCenter:GetChildren()) do
+        if child:IsA("VectorForce") or child:IsA("AngularVelocity") or child:IsA("AlignOrientation") then
+            child.Attachment0 = newAttach
+            child.Parent = newCenter
+        end
+    end
+    
+    -- Reweld remaining blocks to new center
+    for _, part in ipairs(boat:GetDescendants()) do
+        if part:IsA("BasePart") and part:GetAttribute("BoatPiece") and not part:GetAttribute("Broken") and part ~= newCenter then
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0 = newCenter
+            weld.Part1 = part
+            weld.Name = "BlockWeld_" .. part.Name
+            weld.Parent = newCenter
+        end
+    end
+    
+    -- Update PrimaryPart
+    boat.PrimaryPart = newCenter
+end
+
 local function breakPieceOff(boat, piece)
     if not piece:GetAttribute("BoatPiece") then return end
     if piece:GetAttribute("Broken") then return end -- Already broken
@@ -57,10 +134,52 @@ local function breakPieceOff(boat, piece)
     
     piece:SetAttribute("Broken", true)
     
+    -- Check if this is the center block
+    local isCenterBlock = (piece.Name == "CenterBlock")
+    local seat = nil
+    
+    if isCenterBlock then
+        print("[BoatDestruction] Center block breaking! Finding new center...")
+        seat = boat:FindFirstChild("Helm")
+        
+        -- Eject player from seat
+        if seat then
+            ejectPlayer(seat)
+        end
+        
+        -- Find new center block
+        local newCenter = findNewCenterBlock(boat)
+        if newCenter then
+            transferPhysicsToNewCenter(boat, piece, newCenter)
+            
+            -- Move seat to new center if it exists
+            if seat and seat.Parent then
+                seat:SetAttribute("Broken", true)
+                local seatWeld = Instance.new("WeldConstraint")
+                seatWeld.Part0 = newCenter
+                seatWeld.Part1 = seat
+                seatWeld.Name = "SeatWeld"
+                seatWeld.Parent = newCenter
+                
+                -- Reposition seat on top of new center
+                local blockHeight = newCenter.Size.Y
+                seat.CFrame = newCenter.CFrame * CFrame.new(0, blockHeight/2 + 0.5, 0)
+            end
+        else
+            print("[BoatDestruction] No blocks remaining! Boat destroyed!")
+            -- Destroy the entire boat after a delay
+            task.delay(2, function()
+                if boat and boat.Parent then
+                    boat:Destroy()
+                end
+            end)
+        end
+    end
+    
     -- Find and destroy the weld connecting this piece
-    local hull = boat:FindFirstChild("Hull")
-    if hull then
-        for _, weld in ipairs(hull:GetChildren()) do
+    local centerBlock = boat:FindFirstChild("CenterBlock") or boat.PrimaryPart
+    if centerBlock then
+        for _, weld in ipairs(centerBlock:GetChildren()) do
             if weld:IsA("WeldConstraint") and weld.Part1 == piece then
                 weld:Destroy()
                 break
@@ -107,6 +226,10 @@ local function breakPieceOff(boat, piece)
             end
         end
     end)
+    
+    -- Show remaining blocks
+    local remaining = getRemainingBlocks(boat)
+    print("[BoatDestruction] Blocks remaining:", remaining)
 end
 
 local function onBoatPieceHit(boat, piece, otherPart, normalForce)

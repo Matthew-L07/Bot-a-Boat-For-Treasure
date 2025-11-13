@@ -10,83 +10,77 @@ function SimpleBoat.create(ownerUserId)
     model.Name = Constants.BOAT_NAME_PREFIX .. tostring(ownerUserId)
     model:SetAttribute(Constants.BOAT_OWNER_ATTR, ownerUserId)
 
-    -- === Main Hull (Center) ===
-    local hull = Instance.new("Part")
-    hull.Name = "Hull"
-    hull.Size = Vector3.new(BOAT.HullSize.X * 0.6, BOAT.HullSize.Y, BOAT.HullSize.Z * 0.6)
-    hull.Material = Enum.Material.WoodPlanks
-    hull.Color = Color3.fromRGB(200, 160, 90)
-    hull.TopSurface = Enum.SurfaceType.Smooth
-    hull.BottomSurface = Enum.SurfaceType.Smooth
-    hull.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.5, 1, 1)
-    hull.CanCollide = true
-    hull.Anchored = true
-    hull.Parent = model
+    -- Calculate block size - divide the original hull into 3x3 grid
+    local totalWidth = BOAT.HullSize.X
+    local totalHeight = BOAT.HullSize.Y
+    local totalLength = BOAT.HullSize.Z
+    
+    local blockWidth = totalWidth / 3
+    local blockHeight = totalHeight
+    local blockLength = totalLength / 3
+    local blockSize = Vector3.new(blockWidth, blockHeight, blockLength)
+    
+    -- Create 3x3 grid of blocks
+    -- Grid positions: rows (-1, 0, 1) and columns (-1, 0, 1)
+    local blocks = {}
+    local centerBlock = nil
+    
+    for row = -1, 1 do
+        for col = -1, 1 do
+            local block = Instance.new("Part")
+            
+            -- Name blocks by position
+            local blockName = "Block_" .. (row + 1) .. "_" .. (col + 1)
+            if row == 0 and col == 0 then
+                blockName = "CenterBlock"
+            end
+            block.Name = blockName
+            
+            block.Size = blockSize
+            block.Material = Enum.Material.WoodPlanks
+            
+            -- Vary colors slightly for visual distinction
+            local baseColor = Color3.fromRGB(200, 160, 90)
+            local variation = math.random(-10, 10)
+            block.Color = Color3.fromRGB(
+                math.clamp(baseColor.R * 255 + variation, 0, 255) / 255,
+                math.clamp(baseColor.G * 255 + variation, 0, 255) / 255,
+                math.clamp(baseColor.B * 255 + variation, 0, 255) / 255
+            )
+            
+            block.TopSurface = Enum.SurfaceType.Smooth
+            block.BottomSurface = Enum.SurfaceType.Smooth
+            block.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.5, 1, 1)
+            block.CanCollide = true
+            block.Anchored = true
+            block.Parent = model
+            
+            -- Position in grid
+            local xOffset = col * blockWidth
+            local zOffset = row * blockLength
+            block.CFrame = CFrame.new(xOffset, 0, zOffset)
+            
+            -- Mark as boat piece
+            block:SetAttribute("BoatPiece", true)
+            block:SetAttribute("GridRow", row)
+            block:SetAttribute("GridCol", col)
+            
+            table.insert(blocks, block)
+            
+            -- Store center block reference
+            if row == 0 and col == 0 then
+                centerBlock = block
+            end
+        end
+    end
 
-    -- === Bow (Front piece) ===
-    local bow = Instance.new("Part")
-    bow.Name = "Bow"
-    bow.Size = Vector3.new(BOAT.HullSize.X * 0.5, BOAT.HullSize.Y * 0.8, BOAT.HullSize.Z * 0.3)
-    bow.Material = Enum.Material.WoodPlanks
-    bow.Color = Color3.fromRGB(180, 140, 70)
-    bow.TopSurface = Enum.SurfaceType.Smooth
-    bow.BottomSurface = Enum.SurfaceType.Smooth
-    bow.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.5, 1, 1)
-    bow.CanCollide = true
-    bow.Anchored = true
-    bow.Parent = model
-    bow.CFrame = hull.CFrame * CFrame.new(0, 0, -(BOAT.HullSize.Z * 0.45))
-    bow:SetAttribute("BoatPiece", true)
+    -- Set center block as primary part
+    model.PrimaryPart = centerBlock
 
-    -- === Stern (Back piece) ===
-    local stern = Instance.new("Part")
-    stern.Name = "Stern"
-    stern.Size = Vector3.new(BOAT.HullSize.X * 0.5, BOAT.HullSize.Y * 0.8, BOAT.HullSize.Z * 0.3)
-    stern.Material = Enum.Material.WoodPlanks
-    stern.Color = Color3.fromRGB(180, 140, 70)
-    stern.TopSurface = Enum.SurfaceType.Smooth
-    stern.BottomSurface = Enum.SurfaceType.Smooth
-    stern.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.5, 1, 1)
-    stern.CanCollide = true
-    stern.Anchored = true
-    stern.Parent = model
-    stern.CFrame = hull.CFrame * CFrame.new(0, 0, (BOAT.HullSize.Z * 0.45))
-    stern:SetAttribute("BoatPiece", true)
-
-    -- === Port Side (Left) ===
-    local port = Instance.new("Part")
-    port.Name = "PortSide"
-    port.Size = Vector3.new(BOAT.HullSize.X * 0.15, BOAT.HullSize.Y * 0.6, BOAT.HullSize.Z * 0.8)
-    port.Material = Enum.Material.WoodPlanks
-    port.Color = Color3.fromRGB(190, 150, 80)
-    port.TopSurface = Enum.SurfaceType.Smooth
-    port.BottomSurface = Enum.SurfaceType.Smooth
-    port.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.5, 1, 1)
-    port.CanCollide = true
-    port.Anchored = true
-    port.Parent = model
-    port.CFrame = hull.CFrame * CFrame.new(-(BOAT.HullSize.X * 0.375), 0, 0)
-    port:SetAttribute("BoatPiece", true)
-
-    -- === Starboard Side (Right) ===
-    local starboard = Instance.new("Part")
-    starboard.Name = "StarboardSide"
-    starboard.Size = Vector3.new(BOAT.HullSize.X * 0.15, BOAT.HullSize.Y * 0.6, BOAT.HullSize.Z * 0.8)
-    starboard.Material = Enum.Material.WoodPlanks
-    starboard.Color = Color3.fromRGB(190, 150, 80)
-    starboard.TopSurface = Enum.SurfaceType.Smooth
-    starboard.BottomSurface = Enum.SurfaceType.Smooth
-    starboard.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.5, 1, 1)
-    starboard.CanCollide = true
-    starboard.Anchored = true
-    starboard.Parent = model
-    starboard.CFrame = hull.CFrame * CFrame.new((BOAT.HullSize.X * 0.375), 0, 0)
-    starboard:SetAttribute("BoatPiece", true)
-
-    -- === Seat (driver) ===
+    -- === Seat (on top of center block) ===
     local seat = Instance.new("VehicleSeat")
     seat.Name = "Helm"
-    seat.Size = Vector3.new(2, 0.5, 2)
+    seat.Size = Vector3.new(blockWidth * 0.8, 0.5, blockLength * 0.8)
     seat.CanCollide = true
     seat.MaxSpeed = 0
     seat.TurnSpeed = 0
@@ -95,35 +89,45 @@ function SimpleBoat.create(ownerUserId)
     seat.Color = Color3.fromRGB(139, 90, 43)
     seat.Parent = model
     
-    local seatOffset = CFrame.new(0, BOAT.HullSize.Y/2 + 0.75, BOAT.HullSize.Z/2 - 1.5)
-    seat.CFrame = hull.CFrame * seatOffset
+    -- Position seat on top of center block
+    local seatOffset = CFrame.new(0, blockHeight/2 + 0.5, 0)
+    seat.CFrame = centerBlock.CFrame * seatOffset
 
-    model.PrimaryPart = hull
-
-    -- === Weld all pieces to the hull ===
-    local pieces = {bow, stern, port, starboard, seat}
-    for _, piece in ipairs(pieces) do
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0 = hull
-        weld.Part1 = piece
-        weld.Name = "PieceWeld_" .. piece.Name
-        weld.Parent = hull
+    -- === Weld all blocks together ===
+    -- Weld all blocks to the center block
+    for _, block in ipairs(blocks) do
+        if block ~= centerBlock then
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0 = centerBlock
+            weld.Part1 = block
+            weld.Name = "BlockWeld_" .. block.Name
+            weld.Parent = centerBlock
+        end
     end
+    
+    -- Weld seat to center block
+    local seatWeld = Instance.new("WeldConstraint")
+    seatWeld.Part0 = centerBlock
+    seatWeld.Part1 = seat
+    seatWeld.Name = "SeatWeld"
+    seatWeld.Parent = centerBlock
 
-    -- === Physics Setup ===
+    -- === Physics Setup (all on center block) ===
     local rootAttach = Instance.new("Attachment")
     rootAttach.Name = "RootAttachment"
     rootAttach.Position = Vector3.new(0, 0, 0)
-    rootAttach.Parent = hull
+    rootAttach.Parent = centerBlock
 
+    -- Thrust force
     local thrust = Instance.new("VectorForce")
     thrust.Name = "Thrust"
     thrust.Attachment0 = rootAttach
     thrust.ApplyAtCenterOfMass = true
     thrust.RelativeTo = Enum.ActuatorRelativeTo.World
     thrust.Force = Vector3.zero
-    thrust.Parent = hull
+    thrust.Parent = centerBlock
 
+    -- Current force (will be controlled by CurrentService)
     local currentForce = Instance.new("VectorForce")
     currentForce.Name = "CurrentForce"
     currentForce.Attachment0 = rootAttach
@@ -131,16 +135,18 @@ function SimpleBoat.create(ownerUserId)
     currentForce.RelativeTo = Enum.ActuatorRelativeTo.World
     currentForce.Force = Vector3.zero
     currentForce.Enabled = true
-    currentForce.Parent = hull
+    currentForce.Parent = centerBlock
 
+    -- Torque for turning (uses AngularVelocity for smooth rotation)
     local angVel = Instance.new("AngularVelocity")
     angVel.Name = "TurnControl"
     angVel.Attachment0 = rootAttach
     angVel.RelativeTo = Enum.ActuatorRelativeTo.World
     angVel.MaxTorque = 100000
     angVel.AngularVelocity = Vector3.zero
-    angVel.Parent = hull
+    angVel.Parent = centerBlock
 
+    -- Alignment to keep boat upright (only stabilizes roll/pitch, not yaw)
     local align = Instance.new("AlignOrientation")
     align.Name = "Upright"
     align.Attachment0 = rootAttach
@@ -150,14 +156,17 @@ function SimpleBoat.create(ownerUserId)
     align.MaxTorque = 30000
     align.AlignType = Enum.AlignType.PrimaryAxisPerpendicular
     align.PrimaryAxisOnly = true
-    align.PrimaryAxis = Vector3.new(0, 1, 0)
-    align.Parent = hull
+    align.PrimaryAxis = Vector3.new(0, 1, 0)  -- Keep Y-axis up
+    align.Parent = centerBlock
     align.CFrame = CFrame.new()
 
+    -- Tunables
     model:SetAttribute("MaxThrust", BOAT.MaxThrust)
     model:SetAttribute("TurnTorque", BOAT.TurnTorque)
     model:SetAttribute("LinearDrag", BOAT.LinearDrag)
     model:SetAttribute("AngularDrag", BOAT.AngularDrag)
+
+    print("[SimpleBoat] Created 3x3 grid boat with", #blocks, "blocks for user", ownerUserId)
 
     return model
 end

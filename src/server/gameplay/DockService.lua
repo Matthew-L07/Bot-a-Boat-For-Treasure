@@ -144,6 +144,38 @@ local function launchBoat(boat, player)
     -- Remove docked status
     dockedBoats[ownerUserId] = nil
     
+    -- Make dock disappear with animation
+    local dock = Workspace:FindFirstChild("Dock")
+    if dock then
+        -- Fade out and sink the dock
+        for _, part in ipairs(dock:GetDescendants()) do
+            if part:IsA("BasePart") then
+                task.spawn(function()
+                    local originalCFrame = part.CFrame
+                    local originalTransparency = part.Transparency
+                    
+                    for i = 0, 20 do
+                        if part and part.Parent then
+                            -- Sink down
+                            part.CFrame = originalCFrame * CFrame.new(0, -i * 0.5, 0)
+                            -- Fade out
+                            part.Transparency = originalTransparency + (i / 20) * (1 - originalTransparency)
+                            task.wait(0.05)
+                        end
+                    end
+                end)
+            end
+        end
+        
+        -- Destroy dock after animation
+        task.delay(1.5, function()
+            if dock and dock.Parent then
+                dock:Destroy()
+                print("[DockService] Dock removed")
+            end
+        end)
+    end
+    
     -- Unanchor all parts
     for _, part in ipairs(boat:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -152,7 +184,7 @@ local function launchBoat(boat, player)
     end
     
     -- Zero initial velocities for smooth start
-    local hull = boat:FindFirstChild("Hull")
+    local hull = boat:FindFirstChild("CenterBlock") or boat:FindFirstChild("Hull")
     if hull and hull:IsA("BasePart") then
         hull.AssemblyLinearVelocity = Vector3.zero
         hull.AssemblyAngularVelocity = Vector3.zero

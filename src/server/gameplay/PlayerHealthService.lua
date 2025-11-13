@@ -197,13 +197,18 @@ local function startHealthSystem()
             local rootPart = character:FindFirstChild("HumanoidRootPart")
             if not (humanoid and rootPart) then continue end
             
-            -- Skip if player is seated (in boat)
-            if humanoid.Sit then continue end
-            
             -- Check if player's feet are in water
             local feetPosition = rootPart.Position - Vector3.new(0, WATER_CHECK_HEIGHT_OFFSET, 0)
             
-            if isInWater(feetPosition) then
+            -- Skip damage only if player is seated AND not submerged
+            -- If player is in water, they take damage even if seated
+            local isSubmerged = isInWater(rootPart.Position)
+            
+            if isSubmerged or isInWater(feetPosition) then
+                -- If seated but not submerged, skip damage (safe in boat)
+                if humanoid.Sit and not isSubmerged then
+                    continue
+                end
                 -- Apply damage at intervals
                 if currentTime - data.lastDamageTick >= DAMAGE_TICK_INTERVAL then
                     local damageAmount = WATER_DAMAGE_PER_SECOND * DAMAGE_TICK_INTERVAL
