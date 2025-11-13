@@ -78,6 +78,58 @@ local function scatterRocks()
     end
 end
 
+local function createFinishLine()
+    -- Clean up old finish line if it exists
+    local old = Workspace:FindFirstChild("FinishLine")
+    if old then old:Destroy() end
+
+    local model = Instance.new("Model")
+    model.Name = "FinishLine"
+    model.Parent = Workspace
+
+    local finishZ = WorldConfig.COURSE_FINISH_Z
+    local width = WorldConfig.FINISH_LINE_WIDTH
+    local depth = WorldConfig.FINISH_LINE_DEPTH
+    local y = WorldConfig.WATER_SURFACE_Y + 8 -- a bit above water
+
+    -- Visual gate: a big checkered plank across the river
+    local gate = Instance.new("Part")
+    gate.Name = "Gate"
+    gate.Size = Vector3.new(width, 12, depth)
+    gate.Anchored = true
+    gate.CanCollide = false
+    gate.Material = Enum.Material.SmoothPlastic
+    gate.Color = Color3.fromRGB(255, 255, 255)
+    gate.CFrame = CFrame.new(0, y, finishZ)
+    gate.Parent = model
+
+    -- Black / white checkered texture (swap TextureId with any you like)
+    local texture = Instance.new("Texture")
+    texture.Name = "CheckeredTexture"
+    texture.Texture = "rbxassetid://130229010" -- placeholder ID
+    texture.Face = Enum.NormalId.Front
+    texture.StudsPerTileU = 4
+    texture.StudsPerTileV = 4
+    texture.Parent = gate
+
+    local texture2 = texture:Clone()
+    texture2.Face = Enum.NormalId.Back
+    texture2.Parent = gate
+
+    -- Invisible trigger volume slightly upstream of the gate
+    local trigger = Instance.new("Part")
+    trigger.Name = "FinishTrigger"
+    trigger.Size = Vector3.new(width, 20, depth * 2)
+    trigger.Anchored = true
+    trigger.CanCollide = false
+    trigger.CanTouch = true
+    trigger.Transparency = 1
+    trigger.CFrame = CFrame.new(0, WorldConfig.WATER_SURFACE_Y + 5, finishZ - 5)
+    trigger.Parent = model
+
+    print("[TerrainGen] Created finish line at Z =", finishZ)
+end
+
 local function placeSpawn()
     local spawn = Workspace:FindFirstChild("LandSpawn") or Instance.new("SpawnLocation")
     spawn.Name = "LandSpawn"
@@ -195,6 +247,7 @@ function M.build()
     buildBase()
     buildRiver()
     scatterRocks()
+    createFinishLine()
     placeSpawn()
     dropSpawnMarker(WorldConfig.BOAT_WATER_SPAWN)
     createCurrentParticles()

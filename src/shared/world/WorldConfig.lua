@@ -64,6 +64,20 @@ do
     }
 end
 
+-- === Course / Finish Line ===
+
+-- Where we consider the race to "start" (use the boat spawn Z)
+WorldConfig.COURSE_START_Z = WorldConfig.BOAT_WATER_SPAWN.Z
+
+-- Where we consider the race to "end" (near downstream end of river)
+WorldConfig.COURSE_FINISH_Z = WorldConfig.CURRENT_REGION.zMax - 80
+
+-- Width of the finish line gate across the river
+WorldConfig.FINISH_LINE_WIDTH = WorldConfig.RIVER_WIDTH - 10
+
+-- Thickness of the gate part
+WorldConfig.FINISH_LINE_DEPTH = 4
+
 -- === Water visuals ===
 WorldConfig.WATER_TRANSPARENCY = 0.4  -- More transparent for shallow water
 WorldConfig.WATER_REFLECTANCE  = 0.1

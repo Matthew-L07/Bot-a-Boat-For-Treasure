@@ -99,6 +99,8 @@ local function startController()
         for _, boat in ipairs(Workspace:GetChildren()) do
             if not boat:IsA("Model") then continue end
             if not boat:GetAttribute(Constants.BOAT_OWNER_ATTR) then continue end
+            -- Skip finished boats (they've reached the treasure)
+            if boat:GetAttribute("Finished") then continue end
             
             -- Skip docked boats
             if DockService and DockService.isBoatDocked(boat) then continue end

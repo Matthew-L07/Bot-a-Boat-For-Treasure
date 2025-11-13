@@ -25,4 +25,8 @@ BoatDestructionService.start()
 local PlayerHealthService = require(script.Parent:WaitForChild("gameplay"):WaitForChild("PlayerHealthService"))
 PlayerHealthService.start()
 
+-- Start the finish-line service (detects win & shows celebration)
+local FinishService = require(script.Parent:WaitForChild("gameplay"):WaitForChild("FinishService"))
+FinishService.start()
+
 print("[GameInit] ok")
