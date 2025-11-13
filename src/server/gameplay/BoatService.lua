@@ -8,6 +8,7 @@ local WorldConfig = require(ReplicatedStorage.world.WorldConfig)
 local SimpleBoat = require(script.Parent:WaitForChild("SimpleBoat"))
 
 local M = {}
+local DockService -- Will be set via setDockService
 
 local function placeCharacterOnLand(player)
     player.CharacterAdded:Connect(function(char)
@@ -52,7 +53,7 @@ local function spawnBoatFor(player)
     local boat = SimpleBoat.create(player.UserId)
     boat.Parent = Workspace
 
-    -- Spawn position slightly above water
+    -- Spawn position at dock
     local spawnCF = WorldConfig.BOAT_WATER_SPAWN
     local spawnPos = spawnCF.Position
     
@@ -60,10 +61,10 @@ local function spawnBoatFor(player)
     local boatCF = CFrame.new(spawnPos) * CFrame.Angles(0, 0, 0)
     boat:PivotTo(boatCF)
 
-    -- Unanchor all parts
+    -- Keep all parts ANCHORED initially (boat is docked)
     for _, d in ipairs(boat:GetDescendants()) do
-        if d:IsA("BasePart") then 
-            d.Anchored = false 
+        if d:IsA("BasePart") then
+            d.Anchored = true
         end
     end
 
@@ -74,6 +75,11 @@ local function spawnBoatFor(player)
         hull.AssemblyAngularVelocity = Vector3.zero
     end
 
+    -- Dock the boat (adds launch button)
+    if DockService then
+        DockService.dockBoat(boat, player)
+    end
+
     -- Auto-seat player after a brief delay
     local seat = boat:FindFirstChild("Helm")
     if seat and seat:IsA("VehicleSeat") then
@@ -82,7 +88,7 @@ local function spawnBoatFor(player)
         end)
     end
 
-    print("[BoatService] Spawned boat for", player.Name, "at", spawnPos)
+    print("[BoatService] Spawned docked boat for", player.Name, "at", spawnPos)
 end
 
 local heartbeatConn
@@ -93,6 +99,9 @@ local function startController()
         for _, boat in ipairs(Workspace:GetChildren()) do
             if not boat:IsA("Model") then continue end
             if not boat:GetAttribute(Constants.BOAT_OWNER_ATTR) then continue end
+            
+            -- Skip docked boats
+            if DockService and DockService.isBoatDocked(boat) then continue end
             
             local hull = boat:FindFirstChild("Hull")
             local seat = boat:FindFirstChild("Helm")
@@ -133,7 +142,6 @@ local function startController()
             thrust.Force = thrustForce + dragForce
 
             -- Apply smooth turning via AngularVelocity
-            -- Positive steer = turn right (clockwise from above = negative Y rotation)
             local desiredTurnRate = -steer * (turnSpeed / 1000)
             
             -- Get current angular velocity for damping
@@ -146,6 +154,10 @@ local function startController()
             turnControl.AngularVelocity = Vector3.new(0, finalTurnRate, 0)
         end
     end)
+end
+
+function M.setDockService(dockServiceModule)
+    DockService = dockServiceModule
 end
 
 function M.start()

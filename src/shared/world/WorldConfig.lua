@@ -29,7 +29,7 @@ WorldConfig.BOAT_WATER_SPAWN = CFrame.new(0, WorldConfig.WATER_SURFACE_Y + 2.0, 
 -- === RIVER CURRENT ===
 -- The current flows SIDEWAYS (along X-axis) to push boats side-to-side
 WorldConfig.CURRENT_ENABLED = true
-WorldConfig.CURRENT_DIRECTION = Vector3.new(-1, 0, 0)  -- Flows in +X direction (left to right)
+WorldConfig.CURRENT_DIRECTION = Vector3.new(0, 0, 1)  -- flows down the river
 -- ADJUST THIS to control current strength:
 -- Values: 0 = no current, 500 = gentle, 1500 = moderate, 3000+ = strong
 WorldConfig.CURRENT_STRENGTH = 2000  -- Strong sideways push (increased for visibility)

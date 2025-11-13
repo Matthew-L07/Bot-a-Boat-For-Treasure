@@ -10,19 +10,78 @@ function SimpleBoat.create(ownerUserId)
     model.Name = Constants.BOAT_NAME_PREFIX .. tostring(ownerUserId)
     model:SetAttribute(Constants.BOAT_OWNER_ATTR, ownerUserId)
 
-    -- === Hull ===
+    -- === Main Hull (Center) ===
     local hull = Instance.new("Part")
     hull.Name = "Hull"
-    hull.Size = BOAT.HullSize
+    hull.Size = Vector3.new(BOAT.HullSize.X * 0.6, BOAT.HullSize.Y, BOAT.HullSize.Z * 0.6)
     hull.Material = Enum.Material.WoodPlanks
     hull.Color = Color3.fromRGB(200, 160, 90)
     hull.TopSurface = Enum.SurfaceType.Smooth
     hull.BottomSurface = Enum.SurfaceType.Smooth
-    -- Density for good buoyancy - lighter floats better
     hull.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.5, 1, 1)
     hull.CanCollide = true
     hull.Anchored = true
     hull.Parent = model
+
+    -- === Bow (Front piece) ===
+    local bow = Instance.new("Part")
+    bow.Name = "Bow"
+    bow.Size = Vector3.new(BOAT.HullSize.X * 0.5, BOAT.HullSize.Y * 0.8, BOAT.HullSize.Z * 0.3)
+    bow.Material = Enum.Material.WoodPlanks
+    bow.Color = Color3.fromRGB(180, 140, 70)
+    bow.TopSurface = Enum.SurfaceType.Smooth
+    bow.BottomSurface = Enum.SurfaceType.Smooth
+    bow.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.5, 1, 1)
+    bow.CanCollide = true
+    bow.Anchored = true
+    bow.Parent = model
+    bow.CFrame = hull.CFrame * CFrame.new(0, 0, -(BOAT.HullSize.Z * 0.45))
+    bow:SetAttribute("BoatPiece", true)
+
+    -- === Stern (Back piece) ===
+    local stern = Instance.new("Part")
+    stern.Name = "Stern"
+    stern.Size = Vector3.new(BOAT.HullSize.X * 0.5, BOAT.HullSize.Y * 0.8, BOAT.HullSize.Z * 0.3)
+    stern.Material = Enum.Material.WoodPlanks
+    stern.Color = Color3.fromRGB(180, 140, 70)
+    stern.TopSurface = Enum.SurfaceType.Smooth
+    stern.BottomSurface = Enum.SurfaceType.Smooth
+    stern.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.5, 1, 1)
+    stern.CanCollide = true
+    stern.Anchored = true
+    stern.Parent = model
+    stern.CFrame = hull.CFrame * CFrame.new(0, 0, (BOAT.HullSize.Z * 0.45))
+    stern:SetAttribute("BoatPiece", true)
+
+    -- === Port Side (Left) ===
+    local port = Instance.new("Part")
+    port.Name = "PortSide"
+    port.Size = Vector3.new(BOAT.HullSize.X * 0.15, BOAT.HullSize.Y * 0.6, BOAT.HullSize.Z * 0.8)
+    port.Material = Enum.Material.WoodPlanks
+    port.Color = Color3.fromRGB(190, 150, 80)
+    port.TopSurface = Enum.SurfaceType.Smooth
+    port.BottomSurface = Enum.SurfaceType.Smooth
+    port.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.5, 1, 1)
+    port.CanCollide = true
+    port.Anchored = true
+    port.Parent = model
+    port.CFrame = hull.CFrame * CFrame.new(-(BOAT.HullSize.X * 0.375), 0, 0)
+    port:SetAttribute("BoatPiece", true)
+
+    -- === Starboard Side (Right) ===
+    local starboard = Instance.new("Part")
+    starboard.Name = "StarboardSide"
+    starboard.Size = Vector3.new(BOAT.HullSize.X * 0.15, BOAT.HullSize.Y * 0.6, BOAT.HullSize.Z * 0.8)
+    starboard.Material = Enum.Material.WoodPlanks
+    starboard.Color = Color3.fromRGB(190, 150, 80)
+    starboard.TopSurface = Enum.SurfaceType.Smooth
+    starboard.BottomSurface = Enum.SurfaceType.Smooth
+    starboard.CustomPhysicalProperties = PhysicalProperties.new(0.3, 0.5, 0.5, 1, 1)
+    starboard.CanCollide = true
+    starboard.Anchored = true
+    starboard.Parent = model
+    starboard.CFrame = hull.CFrame * CFrame.new((BOAT.HullSize.X * 0.375), 0, 0)
+    starboard:SetAttribute("BoatPiece", true)
 
     -- === Seat (driver) ===
     local seat = Instance.new("VehicleSeat")
@@ -36,17 +95,20 @@ function SimpleBoat.create(ownerUserId)
     seat.Color = Color3.fromRGB(139, 90, 43)
     seat.Parent = model
     
-    -- Position seat on top-back of hull
     local seatOffset = CFrame.new(0, BOAT.HullSize.Y/2 + 0.75, BOAT.HullSize.Z/2 - 1.5)
     seat.CFrame = hull.CFrame * seatOffset
 
-    -- Weld seat to hull
-    local weld = Instance.new("WeldConstraint")
-    weld.Part0 = hull
-    weld.Part1 = seat
-    weld.Parent = hull
-
     model.PrimaryPart = hull
+
+    -- === Weld all pieces to the hull ===
+    local pieces = {bow, stern, port, starboard, seat}
+    for _, piece in ipairs(pieces) do
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0 = hull
+        weld.Part1 = piece
+        weld.Name = "PieceWeld_" .. piece.Name
+        weld.Parent = hull
+    end
 
     -- === Physics Setup ===
     local rootAttach = Instance.new("Attachment")
@@ -54,7 +116,6 @@ function SimpleBoat.create(ownerUserId)
     rootAttach.Position = Vector3.new(0, 0, 0)
     rootAttach.Parent = hull
 
-    -- Thrust force
     local thrust = Instance.new("VectorForce")
     thrust.Name = "Thrust"
     thrust.Attachment0 = rootAttach
@@ -63,7 +124,6 @@ function SimpleBoat.create(ownerUserId)
     thrust.Force = Vector3.zero
     thrust.Parent = hull
 
-    -- Current force (will be controlled by CurrentService)
     local currentForce = Instance.new("VectorForce")
     currentForce.Name = "CurrentForce"
     currentForce.Attachment0 = rootAttach
@@ -72,10 +132,7 @@ function SimpleBoat.create(ownerUserId)
     currentForce.Force = Vector3.zero
     currentForce.Enabled = true
     currentForce.Parent = hull
-    
-    print("[SimpleBoat] Created boat with CurrentForce for user", ownerUserId)
 
-    -- Torque for turning (uses AngularVelocity for smooth rotation)
     local angVel = Instance.new("AngularVelocity")
     angVel.Name = "TurnControl"
     angVel.Attachment0 = rootAttach
@@ -84,7 +141,6 @@ function SimpleBoat.create(ownerUserId)
     angVel.AngularVelocity = Vector3.zero
     angVel.Parent = hull
 
-    -- Alignment to keep boat upright (only stabilizes roll/pitch, not yaw)
     local align = Instance.new("AlignOrientation")
     align.Name = "Upright"
     align.Attachment0 = rootAttach
@@ -94,11 +150,10 @@ function SimpleBoat.create(ownerUserId)
     align.MaxTorque = 30000
     align.AlignType = Enum.AlignType.PrimaryAxisPerpendicular
     align.PrimaryAxisOnly = true
-    align.PrimaryAxis = Vector3.new(0, 1, 0)  -- Keep Y-axis up
+    align.PrimaryAxis = Vector3.new(0, 1, 0)
     align.Parent = hull
     align.CFrame = CFrame.new()
 
-    -- Tunables
     model:SetAttribute("MaxThrust", BOAT.MaxThrust)
     model:SetAttribute("TurnTorque", BOAT.TurnTorque)
     model:SetAttribute("LinearDrag", BOAT.LinearDrag)
