@@ -56,9 +56,15 @@ local function spawnBoatFor(player)
     -- Spawn position at dock
     local spawnCF = WorldConfig.BOAT_WATER_SPAWN
     local spawnPos = spawnCF.Position
-    
-    -- Position the boat oriented forward (looking down -Z)
-    local boatCF = CFrame.new(spawnPos) * CFrame.Angles(0, 0, 0)
+
+    -- Orient the boat so its forward faces downriver (toward the finish line)
+    local goalPos = Vector3.new(spawnPos.X, spawnPos.Y, WorldConfig.COURSE_FINISH_Z)
+    local dir = goalPos - spawnPos
+    if dir.Magnitude == 0 then
+        dir = Vector3.new(0, 0, 1) -- default along +Z if something is degenerate
+    end
+    local forwardDir = Vector3.new(dir.X, 0, dir.Z).Unit
+    local boatCF = CFrame.lookAt(spawnPos, spawnPos + forwardDir)
     boat:PivotTo(boatCF)
 
     -- Keep all parts ANCHORED initially (boat is docked)
@@ -80,7 +86,7 @@ local function spawnBoatFor(player)
         DockService.dockBoat(boat, player)
     end
 
-    -- Auto-seat player after a brief delay
+    -- Auto-seat player after a brief delay (harmless even if RL also seats)
     local seat = boat:FindFirstChild("Helm")
     if seat and seat:IsA("VehicleSeat") then
         task.delay(0.3, function()
@@ -89,6 +95,11 @@ local function spawnBoatFor(player)
     end
 
     print("[BoatService] Spawned docked boat for", player.Name, "at", spawnPos)
+end
+
+-- Public helper so BotService can spawn a fresh docked boat per episode
+function M.spawnDockedBoatForPlayer(player)
+    spawnBoatFor(player)
 end
 
 local heartbeatConn
@@ -103,7 +114,7 @@ local function startController()
             if boat:GetAttribute("Finished") then continue end
             
             -- Skip docked boats
-            if DockService and DockService.isBoatDocked(boat) then continue end
+            if DockService and DockService.isBoatDocked and DockService.isBoatDocked(boat) then continue end
             
             local hull = boat:FindFirstChild("CenterBlock") or boat:FindFirstChild("Hull")
             local seat = boat:FindFirstChild("Helm")

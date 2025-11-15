@@ -14,8 +14,8 @@ BoatService.setDockService(DockService)
 BoatService.start()
 
 -- Start the river current system
-local CurrentService = require(script.Parent:WaitForChild("gameplay"):WaitForChild("CurrentService"))
-CurrentService.start()
+-- local CurrentService = require(script.Parent:WaitForChild("gameplay"):WaitForChild("CurrentService"))
+-- CurrentService.start()
 
 -- Start the boat destruction system
 local BoatDestructionService = require(script.Parent:WaitForChild("gameplay"):WaitForChild("BoatDestructionService"))
@@ -28,5 +28,9 @@ PlayerHealthService.start()
 -- Start the finish-line service (detects win & shows celebration)
 local FinishService = require(script.Parent:WaitForChild("gameplay"):WaitForChild("FinishService"))
 FinishService.start()
+
+
+local BotService = require(script.Parent.gameplay.BotService)
+BotService.start()
 
 print("[GameInit] ok")

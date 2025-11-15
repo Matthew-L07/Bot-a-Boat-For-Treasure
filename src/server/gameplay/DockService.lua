@@ -7,8 +7,13 @@ local Constants = require(ReplicatedStorage:WaitForChild("Constants"))
 
 local M = {}
 
-local dockedBoats = {} -- Track which boats are docked
+-- Track which boats are docked: [ownerUserId] = boatInstance
+local dockedBoats = {}
 local connections = {}
+
+----------------------------------------------------------------------
+-- Dock creation / management
+----------------------------------------------------------------------
 
 local function createDock()
     -- Create a dock structure at the spawn location
@@ -19,7 +24,24 @@ local function createDock()
     local spawnCF = WorldConfig.BOAT_WATER_SPAWN
     local dockWidth = 30
     local dockLength = 40
-    
+
+    local dockPos = Vector3.new(
+        spawnCF.Position.X,
+        WorldConfig.WATER_SURFACE_Y - 0.5,
+        spawnCF.Position.Z
+    )
+
+    -- Compute direction from dock toward finish line
+    local goalPos = Vector3.new(dockPos.X, dockPos.Y, WorldConfig.COURSE_FINISH_Z)
+    local dir = goalPos - dockPos
+    if dir.Magnitude == 0 then
+        dir = Vector3.new(0, 0, -1)
+    end
+    local forwardDir = Vector3.new(dir.X, 0, dir.Z).Unit
+
+    -- Orient dock so its forward faces downriver (toward the finish line)
+    local dockCF = CFrame.lookAt(dockPos, dockPos + forwardDir)
+
     -- Main dock platform
     local platform = Instance.new("Part")
     platform.Name = "DockPlatform"
@@ -28,9 +50,9 @@ local function createDock()
     platform.Color = Color3.fromRGB(139, 90, 43)
     platform.Anchored = true
     platform.CanCollide = true
-    platform.CFrame = CFrame.new(spawnCF.Position.X, WorldConfig.WATER_SURFACE_Y - 0.5, spawnCF.Position.Z)
+    platform.CFrame = dockCF
     platform.Parent = dockFolder
-    
+
     -- Dock posts (4 corners)
     local postPositions = {
         Vector3.new(-dockWidth/2 + 2, -5, -dockLength/2 + 2),
@@ -75,6 +97,19 @@ local function createDock()
     print("[DockService] Created dock at", platform.Position)
     return dockFolder
 end
+
+-- Public helper: ensure a dock exists (used when resetting episodes)
+function M.ensureDock()
+    local dock = Workspace:FindFirstChild("Dock")
+    if dock and dock.Parent == Workspace then
+        return dock
+    end
+    return createDock()
+end
+
+----------------------------------------------------------------------
+-- Launch UI
+----------------------------------------------------------------------
 
 local function createLaunchButton(boat, player)
     -- Create a proximity prompt on the boat seat
@@ -135,9 +170,16 @@ local function createLaunchButton(boat, player)
     return prompt, indicator, billboardGui
 end
 
-local function launchBoat(boat, player)
+----------------------------------------------------------------------
+-- Boat launch / dock
+----------------------------------------------------------------------
+
+function M.launchBoat(boat, player)
     local ownerUserId = boat:GetAttribute(Constants.BOAT_OWNER_ATTR)
-    if not dockedBoats[ownerUserId] then return end
+    if not ownerUserId or dockedBoats[ownerUserId] ~= boat then
+        warn("[DockService] launchBoat called but boat is not docked for", player and player.Name)
+        return
+    end
     
     print("[DockService] Launching boat for", player.Name)
     
@@ -218,8 +260,8 @@ function M.dockBoat(boat, player)
     local ownerUserId = boat:GetAttribute(Constants.BOAT_OWNER_ATTR)
     if not ownerUserId then return end
     
-    -- Mark boat as docked
-    dockedBoats[ownerUserId] = true
+    -- Mark boat as docked for this owner
+    dockedBoats[ownerUserId] = boat
     
     -- Keep all parts anchored
     for _, part in ipairs(boat:GetDescendants()) do
@@ -235,7 +277,7 @@ function M.dockBoat(boat, player)
         local conn = prompt.Triggered:Connect(function(triggeringPlayer)
             -- Only the boat owner can launch
             if triggeringPlayer.UserId == ownerUserId then
-                launchBoat(boat, triggeringPlayer)
+                M.launchBoat(boat, triggeringPlayer)
             else
                 -- Show message that only owner can launch
                 local char = triggeringPlayer.Character
@@ -275,8 +317,38 @@ end
 
 function M.isBoatDocked(boat)
     local ownerUserId = boat:GetAttribute(Constants.BOAT_OWNER_ATTR)
-    return dockedBoats[ownerUserId] == true
+    if not ownerUserId then
+        return false
+    end
+    return dockedBoats[ownerUserId] == boat
 end
+
+-- Return the currently docked boat for this player if it exists
+function M.getDockedBoatForPlayer(player)
+    local userId = player.UserId
+    local boat = dockedBoats[userId]
+    if boat and boat.Parent then
+        return boat
+    end
+    dockedBoats[userId] = nil
+    return nil
+end
+
+-- Hard-reset all boats for this player (used between episodes)
+function M.clearBoatsForPlayer(player)
+    local userId = player.UserId
+    dockedBoats[userId] = nil
+
+    for _, model in ipairs(Workspace:GetChildren()) do
+        if model:IsA("Model") and model:GetAttribute(Constants.BOAT_OWNER_ATTR) == userId then
+            model:Destroy()
+        end
+    end
+end
+
+----------------------------------------------------------------------
+-- Lifecycle
+----------------------------------------------------------------------
 
 function M.start()
     print("[DockService] Starting...")
