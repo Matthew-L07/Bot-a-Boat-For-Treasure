@@ -10,6 +10,81 @@ local SimpleBoat = require(script.Parent:WaitForChild("SimpleBoat"))
 local M = {}
 local DockService -- Will be set via setDockService
 
+
+local function ensureRiverWalls()
+    -- Build side walls around the river once so the boat has a hard boundary.
+    if Workspace:FindFirstChild("RiverWalls") then
+        return
+    end
+
+    local folder = Instance.new("Folder")
+    folder.Name = "RiverWalls"
+    folder.Parent = Workspace
+
+    local riverCenter = WorldConfig.RIVER_CENTER.Position
+    local halfWidth   = WorldConfig.RIVER_WIDTH * 0.5
+    local wallHeight  = WorldConfig.RIVER_WALL_HEIGHT or 20
+    local wallThickness = WorldConfig.RIVER_WALL_THICKNESS or 4
+    local extraLength = WorldConfig.RIVER_WALL_EXTRA_LENGTH or 0
+    local wallName    = WorldConfig.RIVER_WALL_NAME or "RiverWall"
+
+    local wallY = WorldConfig.WATER_SURFACE_Y + wallHeight * 0.5
+
+    local function makeSideWall(sign)
+        local wall = Instance.new("Part")
+        wall.Name = wallName
+        wall.Anchored = true
+        wall.CanCollide = true
+        wall.Material = Enum.Material.Concrete
+        wall.Color = Color3.fromRGB(90, 90, 90)
+        wall.Size = Vector3.new(
+            wallThickness,
+            wallHeight,
+            WorldConfig.RIVER_LENGTH + extraLength
+        )
+
+        local x = riverCenter.X + sign * (halfWidth + wallThickness * 0.5)
+        wall.CFrame = CFrame.new(x, wallY, riverCenter.Z)
+        wall.Parent = folder
+    end
+
+    -- Left/right walls along the river
+    makeSideWall(1)
+    makeSideWall(-1)
+
+    -- Simple staircase on the left bank so players can walk up onto the wall
+    local stairsModel = Instance.new("Model")
+    stairsModel.Name = "RiverWallStairs"
+    stairsModel.Parent = folder
+
+    local steps      = WorldConfig.RIVER_STAIRS_STEPS or 6
+    local stairWidth = WorldConfig.RIVER_STAIRS_WIDTH or 12
+    local stairDepth = WorldConfig.RIVER_STAIRS_DEPTH or 6
+    local stepHeight = wallHeight / steps
+
+    -- Place stairs near the upstream end on the left side
+    local bankX = riverCenter.X - (halfWidth + wallThickness)
+    local baseY = WorldConfig.WATER_SURFACE_Y
+    local baseZ = WorldConfig.BOAT_WATER_SPAWN.Z - stairDepth * 0.5
+
+    for i = 0, steps - 1 do
+        local step = Instance.new("Part")
+        step.Name = "StairStep"
+        step.Anchored = true
+        step.CanCollide = true
+        step.Material = Enum.Material.Concrete
+        step.Color = Color3.fromRGB(180, 180, 180)
+        step.Size = Vector3.new(stairWidth, stepHeight, stairDepth)
+
+        local y = baseY + stepHeight * (i + 0.5)
+        local z = baseZ - stairDepth * i
+
+        step.CFrame = CFrame.new(bankX - stairWidth * 0.5, y, z)
+        step.Parent = stairsModel
+    end
+end
+
+
 local function placeCharacterOnLand(player)
     player.CharacterAdded:Connect(function(char)
         task.defer(function()
@@ -175,6 +250,9 @@ end
 
 function M.start()
     print("[BoatService] Starting...")
+
+    -- Build the river boundary walls / stairs once
+    ensureRiverWalls()
     
     Players.PlayerAdded:Connect(function(p)
         placeCharacterOnLand(p)
@@ -189,5 +267,6 @@ function M.start()
     startController()
     print("[BoatService] Started successfully")
 end
+
 
 return M

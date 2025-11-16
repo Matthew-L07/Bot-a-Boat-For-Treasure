@@ -1,4 +1,5 @@
 -- server/gameplay/BotService.lua
+-- Updated with action persistence and faster decision frequency
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -9,7 +10,6 @@ local Constants = require(ReplicatedStorage:WaitForChild("Constants"))
 local DockService = require(script.Parent:WaitForChild("DockService"))
 local BoatService = require(script.Parent:WaitForChild("BoatService"))
 
--- AI navigation modules under ServerScriptService.ai.navigation
 local AIFolder = ServerScriptService:WaitForChild("ai")
 local NavigationFolder = AIFolder:WaitForChild("navigation")
 
@@ -21,17 +21,16 @@ local Config = require(NavigationFolder:WaitForChild("Config"))
 local BotService = {}
 
 -- Episode controls
-local MAX_STEPS = Config.maxStepsPerEpisode or 400
-local EPISODE_DELAY = Config.episodeDelay or 2.0  -- seconds between episodes
+local MAX_STEPS = Config.maxStepsPerEpisode or 500  -- increased from 400
+local EPISODE_DELAY = Config.episodeDelay or 2.0
 
 ----------------------------------------------------------------------
--- Boat discovery helpers
+-- Boat discovery helpers (unchanged)
 ----------------------------------------------------------------------
 
 local function findBoatForPlayer(player)
     if not player then return nil end
 
-    -- Fast path: ask DockService directly
     if DockService.getDockedBoatForPlayer then
         local docked = DockService.getDockedBoatForPlayer(player)
         if docked then
@@ -39,7 +38,6 @@ local function findBoatForPlayer(player)
         end
     end
 
-    -- Fallback: scan Workspace but require that the boat is docked
     local ownerId = player.UserId
     for _, model in ipairs(Workspace:GetChildren()) do
         if model:IsA("Model") and model:GetAttribute(Constants.BOAT_OWNER_ATTR) == ownerId then
@@ -76,7 +74,7 @@ local function waitForBoatForPlayer(player, timeoutSeconds)
 end
 
 ----------------------------------------------------------------------
--- Step 1: put the bot (player) onto the boat seat
+-- Seating and launching (unchanged)
 ----------------------------------------------------------------------
 
 local function seatPlayerOnBoat(player, boat)
@@ -117,10 +115,6 @@ local function seatPlayerOnBoat(player, boat)
     return true
 end
 
-----------------------------------------------------------------------
--- Step 2: ask DockService to launch the boat (undock)
-----------------------------------------------------------------------
-
 local function launchBoatForPlayer(player, boat)
     if not (player and boat) then
         warn("[BotService] launchBoatForPlayer: missing player or boat")
@@ -143,21 +137,17 @@ local function launchBoatForPlayer(player, boat)
 end
 
 ----------------------------------------------------------------------
--- Step 3: RL-based navigation loop using Env + Agent + BotNavigator
+-- Enhanced RL control with action persistence
 ----------------------------------------------------------------------
 
--- Single shared agent for now (you can move to per-player later)
 local Agent = AgentModule.new()
-
--- Track active controllers so we can stop old loops if needed
-local activeControllers = {} -- [userId] = controlState
+local activeControllers = {}
 
 local function startRLControlForBoat(player, boat)
     if not (player and boat) then return end
 
     local userId = player.UserId
 
-    -- Stop any previous loop for this player
     local existing = activeControllers[userId]
     if existing then
         existing.stop = true
@@ -176,12 +166,12 @@ local function startRLControlForBoat(player, boat)
         lastInfo = nil,
         lastAction = nil,
         stepCount = 0,
+        totalReward = 0,  -- NEW: track cumulative reward
     }
     activeControllers[userId] = state
 
     print("[BotService] Starting RL navigation loop for", player.Name)
 
-    -- Small delay to let DockService fully undock/unanchor
     task.wait(0.5)
 
     while not state.stop do
@@ -195,20 +185,35 @@ local function startRLControlForBoat(player, boat)
             break
         end
 
-        -- Get current state from Env
         local currentState, info = Env.getState(boat)
         if not currentState then
             print("[BotService] Nav loop ending: no state for", player.Name)
             break
         end
 
+        -- Verbose logging for first 3 steps only
+        if state.stepCount <= 3 then
+            print("[Debug] step", state.stepCount, "state=", table.concat(currentState, ", "))
+        end
+
         state.stepCount += 1
 
-        -- Compute reward for the previous action
+        -- Compute reward
         if state.lastState and state.lastAction and state.lastInfo then
             local reward, envDone = Env.getRewardAndDone(state.lastInfo, info, state.stepCount)
+            state.totalReward += reward
 
-            -- Enforce MAX_STEPS as a hard episode cutoff
+            if state.stepCount <= 3 or state.stepCount % 50 == 0 then
+                print(string.format(
+                    "[Debug] step=%d reward=%.3f total=%.2f finished=%s crashed=%s",
+                    state.stepCount,
+                    reward,
+                    state.totalReward,
+                    tostring(info.finished),
+                    tostring(info.crashed)
+                ))
+            end
+
             local finalDone = envDone
             if not finalDone and state.stepCount >= MAX_STEPS then
                 finalDone = true
@@ -225,25 +230,32 @@ local function startRLControlForBoat(player, boat)
 
             if finalDone then
                 if envDone then
-                    print("[BotService] Episode ended for", player.Name, "reward=", reward)
+                    print(string.format(
+                        "[BotService] Episode ended for %s: final_reward=%.2f, total_reward=%.2f",
+                        player.Name,
+                        reward,
+                        state.totalReward
+                    ))
                 end
                 Agent:onEpisodeEnd()
                 break
             end
         end
 
-        -- Choose next action via Agent (DQN-style epsilon-greedy)
+        -- Select action
         local actionId = Agent:selectAction(currentState)
 
         state.lastState = currentState
         state.lastInfo = info
         state.lastAction = actionId
 
-        -- Apply action to the boat
-        state.navigator:stepAction(actionId)
+        -- NEW: Apply action with persistence for smoother control
+        local usePersistence = Config.useActionPersistence ~= false  -- default true
+        state.navigator:stepAction(actionId, usePersistence)
 
-        -- Adjust this to control decision frequency
-        task.wait(Config.stepInterval or 1.0)
+        -- NEW: Faster decision frequency for more responsive control
+        local stepInterval = Config.stepInterval or 0.3  -- reduced from 1.0
+        task.wait(stepInterval)
     end
 
     if activeControllers[userId] == state then
@@ -255,12 +267,13 @@ local function startRLControlForBoat(player, boat)
         player.Name,
         "after",
         state.stepCount,
-        "steps"
+        "steps, total reward:",
+        string.format("%.2f", state.totalReward)
     )
 end
 
 ----------------------------------------------------------------------
--- Single episode flow
+-- Episode management (unchanged)
 ----------------------------------------------------------------------
 
 local function runSingleEpisodeForPlayer(player)
@@ -270,7 +283,6 @@ local function runSingleEpisodeForPlayer(player)
 
     print("[BotService] Starting bot episode for", player.Name)
 
-    -- Hard reset environment for this player
     if DockService.clearBoatsForPlayer then
         DockService.clearBoatsForPlayer(player)
     end
@@ -281,14 +293,12 @@ local function runSingleEpisodeForPlayer(player)
         BoatService.spawnDockedBoatForPlayer(player)
     end
 
-    -- 1) Wait for / find boat
     local boat = waitForBoatForPlayer(player, 8)
     if not boat then
         warn("[BotService] Aborting episode – no boat for", player.Name)
         return false
     end
 
-    -- 2) Seat player
     print("[BotService] Bot episode: seating player on boat", boat.Name)
     local seated = seatPlayerOnBoat(player, boat)
     if not seated then
@@ -296,10 +306,8 @@ local function runSingleEpisodeForPlayer(player)
         return false
     end
 
-    -- 3) Small delay to ensure dock is ready
     task.wait(1.0)
 
-    -- 4) Launch boat
     print("[BotService] Bot episode: attempting to launch boat for", player.Name)
     local launched = launchBoatForPlayer(player, boat)
     if not launched then
@@ -307,18 +315,13 @@ local function runSingleEpisodeForPlayer(player)
         return false
     end
 
-    -- 5) RL control loop (blocks until episode ends)
     startRLControlForBoat(player, boat)
 
     print("[BotService] Episode finished for", player.Name)
     return true
 end
 
-----------------------------------------------------------------------
--- Looping episodes per player
-----------------------------------------------------------------------
-
-local episodeLoops = {} -- [userId] = true while loop is running
+local episodeLoops = {}
 
 local function runEpisodesLoopForPlayer(player)
     local userId = player.UserId
@@ -338,7 +341,6 @@ local function runEpisodesLoopForPlayer(player)
             break
         end
 
-        -- Small pause between episodes so the world can reset / dock boats, etc.
         task.wait(EPISODE_DELAY)
     end
 
@@ -347,7 +349,7 @@ local function runEpisodesLoopForPlayer(player)
 end
 
 ----------------------------------------------------------------------
--- Player hooks
+-- Player hooks (unchanged)
 ----------------------------------------------------------------------
 
 local function onCharacterAdded(player, _character)
@@ -361,9 +363,7 @@ local function onCharacterAdded(player, _character)
 
     episodeLoops[userId] = true
 
-    -- Run the episodes loop in the background so we don't block CharacterAdded
     task.spawn(function()
-        -- short delay so character finishes spawning
         task.wait(1.0)
         runEpisodesLoopForPlayer(player)
     end)

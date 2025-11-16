@@ -4,8 +4,23 @@ local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 
 local Constants = require(ReplicatedStorage:WaitForChild("Constants"))
+local WorldConfig = require(ReplicatedStorage:WaitForChild("world"):WaitForChild("WorldConfig"))
 
 local M = {}
+
+-- Precompute river bounds so we can detect when a boat is on land (grass)
+local RiverCenter = WorldConfig.RIVER_CENTER and WorldConfig.RIVER_CENTER.Position or Vector3.new(0, 0, 0)
+local RIVER_HALF_WIDTH = (WorldConfig.RIVER_WIDTH or 0) * 0.5
+local RIVER_HALF_LENGTH = (WorldConfig.RIVER_LENGTH or 0) * 0.5
+local BANK_MARGIN = 0  -- set >0 if you want a small safe margin inside the banks
+
+local function isInRiverRegion(position)
+    local dx = position.X - RiverCenter.X
+    local dz = position.Z - RiverCenter.Z
+
+    return math.abs(dx) <= (RIVER_HALF_WIDTH - BANK_MARGIN)
+        and math.abs(dz) <= (RIVER_HALF_LENGTH + BANK_MARGIN)
+end
 
 local BREAK_FORCE_THRESHOLD = 50 -- Minimum collision force to break a piece
 local FLOAT_TIME = 10 -- How long broken pieces float before sinking
@@ -233,17 +248,49 @@ local function breakPieceOff(boat, piece)
 end
 
 local function onBoatPieceHit(boat, piece, otherPart, normalForce)
-    -- Check if hit a rock
-    if not otherPart:IsA("BasePart") then return end
-    if otherPart.Name ~= "Rock" then return end
-    
-    -- Calculate impact force magnitude
-    local forceMagnitude = normalForce.Magnitude
-    
-    if forceMagnitude > BREAK_FORCE_THRESHOLD then
-        breakPieceOff(boat, piece)
+    if not otherPart or not otherPart:IsA("BasePart") then
+        return
     end
+
+    ------------------------------------------------------------------
+    -- 1) Rocks: strong impact => treat as a crash for RL purposes
+    ------------------------------------------------------------------
+    if otherPart.Name == "Rock" then
+        local forceMagnitude = normalForce.Magnitude
+
+        if forceMagnitude > BREAK_FORCE_THRESHOLD then
+            -- Mark this boat as crashed so Env.getState / getRewardAndDone
+            -- can terminate the episode and give a big negative reward.
+            if not boat:GetAttribute("Crashed") then
+                boat:SetAttribute("Crashed", true)
+                warn(string.format(
+                    "[BoatDestruction] Boat hit rock (|F| = %.2f) - marking Crashed",
+                    forceMagnitude
+                ))
+            end
+
+            -- Still break off the impacted piece for visuals.
+            breakPieceOff(boat, piece)
+        end
+
+        return
+    end
+
+    ------------------------------------------------------------------
+    -- 2) (Optional) If you later add RiverWall or other lethal obstacles,
+    --    you can handle them here in a similar pattern, e.g.:
+    --
+    if otherPart.Name == "RiverWall" or otherPart:GetAttribute("IsRiverWall") then
+        if not boat:GetAttribute("Crashed") then
+            boat:SetAttribute("Crashed", true)
+            warn("[BoatDestruction] Boat hit river wall - marking Crashed")
+        end
+        breakPieceOff(boat, piece)
+        return
+    end
+    ------------------------------------------------------------------
 end
+
 
 local function monitorBoat(boat)
     -- Monitor all boat pieces for collisions

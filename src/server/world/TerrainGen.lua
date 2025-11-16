@@ -209,32 +209,7 @@ local function createCurrentParticles()
             waterFlow.Acceleration = direction * 3 + Vector3.new(0, -0.5, 0)
             waterFlow.LightEmission = 0.3
             waterFlow.Parent = emitter
-            
-            -- Mist/spray particles for extra visibility
-            local mist = Instance.new("ParticleEmitter")
-            mist.Name = "WaterMist"
-            mist.Texture = "rbxasset://textures/particles/smoke_main.dds"
-            mist.Color = ColorSequence.new(Color3.fromRGB(180, 220, 255))
-            mist.Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 0.7),
-                NumberSequenceKeypoint.new(0.3, 0.5),
-                NumberSequenceKeypoint.new(1, 1)
-            })
-            mist.Size = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(0.5, 2),
-                NumberSequenceKeypoint.new(1, 3)
-            })
-            mist.Lifetime = NumberRange.new(4, 6)
-            mist.Rate = 5
-            mist.Speed = NumberRange.new(5, 8)
-            mist.SpreadAngle = Vector2.new(20, 8)
-            mist.EmissionDirection = Enum.NormalId.Front
-            mist.Rotation = NumberRange.new(0, 360)
-            mist.RotSpeed = NumberRange.new(-20, 20)
-            mist.Acceleration = direction * 2 + Vector3.new(0, 0.5, 0)  -- Slight upward drift
-            mist.LightEmission = 0.1
-            mist.Parent = emitter
+
         end
     end
     

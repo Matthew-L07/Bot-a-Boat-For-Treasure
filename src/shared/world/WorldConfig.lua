@@ -4,14 +4,13 @@ local WorldConfig = {}
 
 -- === Land ===
 WorldConfig.BASE_CENTER = CFrame.new(0, 0, 0)
--- Bigger base to hold a long, wide river (surface Y = 0 + 40/2 = 20)
 WorldConfig.BASE_SIZE   = Vector3.new(2048, 40, 3072)
 local BASE_SURFACE_Y = WorldConfig.BASE_CENTER.Y + WorldConfig.BASE_SIZE.Y * 0.5
 
 -- === River geometry (water surface == ground surface) ===
-WorldConfig.RIVER_WIDTH   = 120         -- was 48
-WorldConfig.RIVER_LENGTH  = 2000        -- was 420
-WorldConfig.WATER_DEPTH   = 5           -- SHALLOW - players can stand!
+WorldConfig.RIVER_WIDTH   = 120
+WorldConfig.RIVER_LENGTH  = 2000
+WorldConfig.WATER_DEPTH   = 5
 
 local RIVER_TOP_Y    = BASE_SURFACE_Y
 local RIVER_BOTTOM_Y = BASE_SURFACE_Y - WorldConfig.WATER_DEPTH
@@ -21,65 +20,84 @@ WorldConfig.RIVER_CENTER = CFrame.new(0, RIVER_CENTER_Y, 0)
 WorldConfig.RIVER_SIZE   = Vector3.new(WorldConfig.RIVER_WIDTH, WorldConfig.WATER_DEPTH, WorldConfig.RIVER_LENGTH)
 WorldConfig.WATER_SURFACE_Y = RIVER_TOP_Y
 
--- === Spawns (place near the upstream end of the river) ===
+-- === Spawns ===
 local upstreamZ = -(WorldConfig.RIVER_LENGTH * 0.5) + 120
 WorldConfig.PLAYER_SPAWN     = CFrame.new(-100, BASE_SURFACE_Y + 15, upstreamZ)
 WorldConfig.BOAT_WATER_SPAWN = CFrame.new(0, WorldConfig.WATER_SURFACE_Y + 2.0, upstreamZ + 20)
 
--- === RIVER CURRENT ===
--- The current flows SIDEWAYS (along X-axis) to push boats side-to-side
+-- === River current ===
 WorldConfig.CURRENT_ENABLED = true
-WorldConfig.CURRENT_DIRECTION = Vector3.new(0, 0, 1)  -- flows down the river
--- ADJUST THIS to control current strength:
--- Values: 0 = no current, 500 = gentle, 1500 = moderate, 3000+ = strong
-WorldConfig.CURRENT_STRENGTH = 2000  -- Strong sideways push (increased for visibility)
+WorldConfig.CURRENT_DIRECTION = Vector3.new(0, 0, 1)
+WorldConfig.CURRENT_STRENGTH = 2000
 
--- Current region (where the current applies)
 WorldConfig.CURRENT_REGION = {
     xMin = -WorldConfig.RIVER_WIDTH * 0.5,
-    xMax = WorldConfig.RIVER_WIDTH * 0.5,
-    yMin = RIVER_BOTTOM_Y,
-    yMax = RIVER_TOP_Y + 5,  -- Slightly above water surface
+    xMax =  WorldConfig.RIVER_WIDTH * 0.5,
+    yMin =  RIVER_BOTTOM_Y,
+    yMax =  RIVER_TOP_Y + 5,
     zMin = -WorldConfig.RIVER_LENGTH * 0.5,
-    zMax = WorldConfig.RIVER_LENGTH * 0.5,
+    zMax =  WorldConfig.RIVER_LENGTH * 0.5,
 }
 
--- === Rocks (sparse, inside the wet channel) ===
-WorldConfig.ROCK_COUNT        = 16                         -- sparse across 2km
+-- === Rocks ===
+WorldConfig.ROCK_COUNT        = 16
 WorldConfig.ROCK_RADIUS_RANGE = Vector2.new(4, 8)
-WorldConfig.ROCK_MIN_SPACING  = 35                         -- keep distance between rocks
+WorldConfig.ROCK_MIN_SPACING  = 35
 
--- Compute a rock region that fits inside the widened river
 do
     local halfW = WorldConfig.RIVER_WIDTH * 0.5
     local halfL = WorldConfig.RIVER_LENGTH * 0.5
-    -- Keep rocks away from banks a bit
     local marginX = 10
     local marginZ = 80
 
     WorldConfig.ROCK_REGION = {
         xMin = -halfW + marginX, xMax = halfW - marginX,
         zMin = -halfL + marginZ, zMax = halfL - marginZ,
-        y    = WorldConfig.WATER_SURFACE_Y
+        y    = WorldConfig.WATER_SURFACE_Y,
     }
 end
 
 -- === Course / Finish Line ===
-
--- Where we consider the race to "start" (use the boat spawn Z)
 WorldConfig.COURSE_START_Z = WorldConfig.BOAT_WATER_SPAWN.Z
-
--- Where we consider the race to "end" (near downstream end of river)
 WorldConfig.COURSE_FINISH_Z = WorldConfig.CURRENT_REGION.zMax - 80
+
+-- RL geometry: direction and origin for progress/heading and obstacle sensing
+WorldConfig.RIVER_FORWARD = Vector3.new(0, 0, 1)  -- downstream is +Z
+WorldConfig.RIVER_ORIGIN  = Vector3.new(
+    0,
+    WorldConfig.WATER_SURFACE_Y,
+    WorldConfig.COURSE_START_Z
+)
+WorldConfig.RIVER_CENTER_X   = WorldConfig.RIVER_CENTER.Position.X
+WorldConfig.RIVER_HALF_WIDTH = WorldConfig.RIVER_WIDTH * 0.5
+WorldConfig.OBSTACLE_SENSE_DISTANCE = 200
 
 -- Width of the finish line gate across the river
 WorldConfig.FINISH_LINE_WIDTH = WorldConfig.RIVER_WIDTH - 10
 
--- Thickness of the gate part
+
+-- RL geometry: “downriver” is +Z from start to finish
+WorldConfig.RIVER_FORWARD = Vector3.new(0, 0, 1)
+WorldConfig.RIVER_ORIGIN  = Vector3.new(0, WorldConfig.WATER_SURFACE_Y, WorldConfig.COURSE_START_Z)
+WorldConfig.RIVER_CENTER_X   = WorldConfig.RIVER_CENTER.Position.X
+WorldConfig.RIVER_HALF_WIDTH = WorldConfig.RIVER_WIDTH * 0.5
+WorldConfig.OBSTACLE_SENSE_DISTANCE = 200
+
+WorldConfig.FINISH_LINE_WIDTH = WorldConfig.RIVER_WIDTH - 10
 WorldConfig.FINISH_LINE_DEPTH = 4
 
+-- === River walls / boundaries ===
+WorldConfig.RIVER_WALL_HEIGHT       = 20
+WorldConfig.RIVER_WALL_THICKNESS    = 4
+WorldConfig.RIVER_WALL_EXTRA_LENGTH = 40
+WorldConfig.RIVER_WALL_NAME         = "RiverWall"
+
+WorldConfig.RIVER_STAIRS_STEPS = 6
+WorldConfig.RIVER_STAIRS_WIDTH = 12
+WorldConfig.RIVER_STAIRS_DEPTH = 6
+
 -- === Water visuals ===
-WorldConfig.WATER_TRANSPARENCY = 0.4  -- More transparent for shallow water
+WorldConfig.WATER_TRANSPARENCY = 0.4
 WorldConfig.WATER_REFLECTANCE  = 0.1
 WorldConfig.WATER_WAVE_SIZE    = 0.15
 WorldConfig.WATER_WAVE_SPEED   = 8.0

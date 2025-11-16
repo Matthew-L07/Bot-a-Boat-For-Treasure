@@ -1,55 +1,71 @@
 -- ai/navigation/BotNavigator.lua
--- Simple action-space controller for a boat's helm seat.
--- Actions are server-side and compatible with BoatService's physics loop.
+-- Action-space controller with action persistence for smoother movement
 
 local BotNavigator = {}
 BotNavigator.__index = BotNavigator
 
--- Discrete action space:
---  1: IDLE
---  2: FORWARD
---  3: REVERSE
---  4: TURN_LEFT  (forward + left turn)
---  5: TURN_RIGHT (forward + right turn)
+-- Discrete action space optimized for forward navigation:
+--  1: FORWARD         - straight ahead (most common)
+--  2: FORWARD_LEFT    - forward while turning left
+--  3: FORWARD_RIGHT   - forward while turning right
+--  4: SHARP_LEFT      - aggressive left turn with moderate speed
+--  5: SHARP_RIGHT     - aggressive right turn with moderate speed
+
 local ACTIONS = {
-    {
+        {
         id = 1,
-        name = "IDLE",
-        throttle = 0.0,
-        steer = 0.0,
-    },
-    {
-        id = 2,
         name = "FORWARD",
         throttle = 1.0,
         steer = 0.0,
     },
     {
+        id = 2,
+        name = "FORWARD_LEFT",
+        throttle = 1.0,   -- was 0.8
+        steer = -0.5,     -- slightly softer turn
+    },
+    {
         id = 3,
-        name = "REVERSE",
-        throttle = -1.0,
-        steer = 0.0,
+        name = "FORWARD_RIGHT",
+        throttle = 1.0,   -- was 0.8
+        steer = 0.5,
     },
     {
         id = 4,
-        name = "TURN_LEFT",
-        throttle = 0.6,
+        name = "SHARP_LEFT",
+        throttle = 0.9,   -- was 0.5
         steer = -1.0,
     },
     {
         id = 5,
-        name = "TURN_RIGHT",
-        throttle = 0.6,
+        name = "SHARP_RIGHT",
+        throttle = 0.9,   -- was 0.5
         steer = 1.0,
     },
 }
 
--- Create a navigator for a specific boat model (must have Helm seat)
+-- Action masking: returns list of valid action IDs.
+-- We keep the enableLowPriority arg for compatibility, but ignore it
+-- since there are no low-priority actions anymore.
+function BotNavigator.getValidActions(enableLowPriority)
+    local valid = {}
+    for _, action in ipairs(ACTIONS) do
+        table.insert(valid, action.id)
+    end
+    return valid
+end
+
+-- Create a navigator for a specific boat model
 function BotNavigator.new(boat)
     local self = setmetatable({}, BotNavigator)
 
     self.boat = boat
     self.seat = nil
+    
+    -- Action persistence: hold actions for multiple steps
+    self.currentAction = nil
+    self.actionHoldSteps = 0
+    self.actionHoldTarget = 0
 
     if boat and boat:IsA("Model") then
         local seat = boat:FindFirstChild("Helm")
@@ -74,7 +90,7 @@ function BotNavigator:getNumActions()
     return #ACTIONS
 end
 
--- Apply an action to the helm seat (sets throttle + steer)
+-- Apply an action to the helm seat
 function BotNavigator:applyAction(action)
     if not action then
         warn("[BotNavigator] applyAction called with nil action")
@@ -88,33 +104,83 @@ function BotNavigator:applyAction(action)
 
     self.seat.ThrottleFloat = action.throttle
     self.seat.SteerFloat = action.steer
+end
+
+-- Step with action persistence: hold actions for multiple steps to build momentum
+-- ai/navigation/BotNavigator.lua (inside the module)
+
+function BotNavigator:stepActionWithPersistence(actionId, defaultMinHold, defaultMaxHold)
+    local action = ACTIONS[actionId]
+    if not action then
+        return
+    end
+
+    -- If we're already holding this action and haven't reached the target, just reapply it
+    if self.currentAction == action and self.actionHoldSteps < self.actionHoldTarget then
+        self.actionHoldSteps += 1
+        self:applyAction(action)
+        return
+    end
+
+    -- Either new action or previous hold finished
+    self.currentAction = action
+
+    local id = action.id
+    local minHold, maxHold
+
+    if id == 1 then
+        -- FORWARD: long holds for smooth straight motion
+        minHold, maxHold = 4, 8
+    elseif id == 2 or id == 3 then
+        -- FORWARD_LEFT / FORWARD_RIGHT: medium hold, gentle arcs
+        minHold, maxHold = 3, 5
+    elseif id == 4 or id == 5 then
+        -- SHARP_LEFT / SHARP_RIGHT: very short taps to avoid over-rotation
+        minHold, maxHold = 1, 2
+    else
+        -- Fallback to defaults if we ever add more actions
+        minHold = defaultMinHold or 2
+        maxHold = defaultMaxHold or 5
+    end
+
+    self.actionHoldTarget = math.random(minHold, maxHold)
+    self.actionHoldSteps = 1
+
+    self:applyAction(action)
 
     print(string.format(
-        "[BotNavigator] Action %s (id=%d): throttle=%.2f steer=%.2f",
+        "[BotNavigator] New action %s (id=%d): throttle=%.2f steer=%.2f, holding for %d steps",
         action.name,
         action.id,
         action.throttle,
-        action.steer
+        action.steer,
+        self.actionHoldTarget
     ))
 end
 
--- Convenience: pick a random action and apply it
-function BotNavigator:stepRandom()
-    local action = self:getRandomAction()
-    self:applyAction(action)
+
+-- Standard step for RL agent (with optional persistence)
+function BotNavigator:stepAction(actionId, usePersistence)
+    if usePersistence then
+        return self:stepActionWithPersistence(actionId)
+    else
+        local action = ACTIONS[actionId]
+        if not action then
+            warn("[BotNavigator] Invalid actionId", actionId)
+            return
+        end
+        self:applyAction(action)
+    end
 end
 
--- Convenience: apply a specific action ID (for RL agent control)
-function BotNavigator:stepAction(actionId)
+-- Get action priority level (still useful for debugging)
+function BotNavigator:getActionPriority(actionId)
     local action = ACTIONS[actionId]
-    if not action then
-        warn("[BotNavigator] Invalid actionId", actionId)
-        return
-    end
-    self:applyAction(action)
+    return action and action.priority or "low"
 end
 
 return {
     ACTIONS = ACTIONS,
     new = BotNavigator.new,
+    getValidActions = BotNavigator.getValidActions,
 }
