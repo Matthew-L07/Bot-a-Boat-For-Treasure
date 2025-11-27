@@ -21,7 +21,7 @@ Config.stateDim = 9    -- 9-dim state: progress, lateral, heading, velocities, d
 ----------------------------------------------------------------------
 
 Config.maxStepsPerEpisode = 500  -- Increased from 400
-Config.episodeDelay = 2.0        -- seconds between episodes
+Config.episodeDelay = 1.0        -- seconds between episodes
 Config.stepInterval = 0.1        -- faster decision frequency (was 1.0)
 Config.useActionPersistence = true  -- enable action holding
 
@@ -29,8 +29,8 @@ Config.useActionPersistence = true  -- enable action holding
 -- Action Persistence Settings
 ----------------------------------------------------------------------
 
-Config.minActionHoldSteps = 2
-Config.maxActionHoldSteps = 5
+Config.minActionHoldSteps = 1
+Config.maxActionHoldSteps = 3
 
 ----------------------------------------------------------------------
 -- Reward Function Parameters
@@ -38,14 +38,17 @@ Config.maxActionHoldSteps = 5
 
 -- Core rewards
 Config.progressRewardScale = 3.0    -- Increased from 1.0
-Config.stepPenalty = -0.005         -- Small time penalty
-Config.finishReward = 1000.0          -- Increased from 10.0
-Config.crashPenalty = -100.0         -- Increased magnitude from -5.0
+Config.stepPenalty = -0.001         -- Small time penalty
+Config.finishReward = 300.0          -- Increased from 10.0
+Config.crashPenalty = -30.0         -- Increased magnitude from -5.0
+
+Config.numCheckpoints = 10
+Config.checkpointReward = 5.0
 
 -- Velocity-based rewards
-Config.velocityRewardScale = 0.5
+Config.velocityRewardScale = 0.2
 Config.targetForwardSpeed = 0.2
-Config.lateralPenaltyScale = 0.3
+Config.lateralPenaltyScale = 0.5
 
 -- Alignment rewards
 Config.alignmentRewardScale = 0.2
@@ -54,9 +57,9 @@ Config.alignmentRewardScale = 0.2
 -- Exploration Parameters
 ----------------------------------------------------------------------
 
-Config.epsilonStart = 0.2
-Config.epsilonEnd   = 0.05
-Config.epsilonDecaySteps = 10000
+Config.epsilonStart = 1.0 -- exploration focused
+Config.epsilonEnd   = 0.2
+Config.epsilonDecaySteps = 2000
 
 ----------------------------------------------------------------------
 -- Curriculum Learning
@@ -68,7 +71,7 @@ Config.lowPriorityActionThreshold = 50
 
 ----------------------------------------------------------------------
 -- Training Parameters
-----------------------------------------------------------------------
+------------------------------------------------------------a----------
 
 Config.trainingEnabled = false      -- Training happens offline
 Config.gamma = 0.99

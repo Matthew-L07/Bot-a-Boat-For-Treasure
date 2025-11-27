@@ -218,6 +218,12 @@ end
 
 function M.build()
     print("[TerrainGen] building world…")
+    if WorldConfig.MAP_SEED then
+        math.randomseed(WorldConfig.MAP_SEED)
+    else
+        math.randomseed(123456) -- some constant
+    end
+
     clearAllTerrain()
     buildBase()
     buildRiver()
