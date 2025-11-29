@@ -50,6 +50,10 @@ Config.lateralPenaltyScale = 0.3
 -- Alignment rewards
 Config.alignmentRewardScale = 0.2
 
+-- 🔹 Checkpoint shaping
+Config.numCheckpoints   = 10     -- number of segments between start (0) and finish (1)
+Config.checkpointReward = 5.0    -- bonus per checkpoint boundary crossed
+
 ----------------------------------------------------------------------
 -- Exploration Parameters
 ----------------------------------------------------------------------

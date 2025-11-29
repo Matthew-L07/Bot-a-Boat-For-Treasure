@@ -69,6 +69,13 @@ local LATERAL_PENALTY_SCALE = (Config and Config.lateralPenaltyScale) or 0.3
 local ALIGNMENT_REWARD_SCALE = (Config and Config.alignmentRewardScale) or 0.2
 
 ----------------------------------------------------------------------
+-- Checkpoints (for shaping & visualization)
+----------------------------------------------------------------------
+
+local CHECKPOINTS = { 0.2, 0.4, 0.6, 0.8 }
+local CHECKPOINT_REWARD = 20  -- extra shaping reward when crossing a new checkpoint
+
+----------------------------------------------------------------------
 -- Helper functions
 ----------------------------------------------------------------------
 
@@ -160,6 +167,50 @@ local function rayDistanceNormalized(root, localDir)
     return clamp01(dist / MAX_RAY_DISTANCE)
 end
 
+-- Return the index (0..#CHECKPOINTS) of the highest checkpoint passed
+local function getCheckpointIndex(progress)
+    local idx = 0
+    for i, p in ipairs(CHECKPOINTS) do
+        if progress >= p then
+            idx = i
+        else
+            break
+        end
+    end
+    return idx
+end
+
+-- Simple 3D popup above the boat when a checkpoint is reached
+local function showCheckpointPopup(boat, checkpointIndex)
+    local root = boat and boat.PrimaryPart
+    if not root or not root:IsA("BasePart") then
+        return
+    end
+
+    -- BillboardGui that hovers over the boat
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "CheckpointPopup"
+    billboard.Size = UDim2.new(0, 120, 0, 40)
+    billboard.StudsOffset = Vector3.new(0, 6, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = root
+
+    local label = Instance.new("TextLabel")
+    label.BackgroundTransparency = 0.3
+    label.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    label.TextColor3 = Color3.fromRGB(255, 255, 0)
+    label.TextStrokeTransparency = 0.3
+    label.Font = Enum.Font.GothamBold
+    label.TextScaled = true
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.Text = string.format("Checkpoint %d!", checkpointIndex)
+    label.Parent = billboard
+
+    -- Auto-destroy after 1.5 seconds
+    local Debris = game:GetService("Debris")
+    Debris:AddItem(billboard, 1.5)
+end
+
 ----------------------------------------------------------------------
 -- Public API: getState
 ----------------------------------------------------------------------
@@ -215,6 +266,8 @@ function Env.getState(boat)
         finished = boat:GetAttribute("Finished") == true,
         crashed = (boat:GetAttribute("Crashed") == true)
             or (boat:GetAttribute("Sunk") == true),
+        -- new for checkpoint
+        boatModel = boat,
     }
 
     return state, info
@@ -235,9 +288,16 @@ function Env.getRewardAndDone(prevInfo, info, stepCount)
     local prevProgress = prevInfo.progress or 0
     local currProgress = info.progress or 0
     local deltaProgress = currProgress - prevProgress
+
+    ------------------------------------------------------------------
+    -- 1) Progress reward
+    ------------------------------------------------------------------
     local progressReward = PROGRESS_REWARD_SCALE * deltaProgress
     reward += progressReward
 
+    ------------------------------------------------------------------
+    -- 2) Velocity + alignment + lateral penalty + step penalty
+    ------------------------------------------------------------------
     local forwardSpeed = info.forwardSpeed or 0
     local velocityReward = 0
     
@@ -265,6 +325,31 @@ function Env.getRewardAndDone(prevInfo, info, stepCount)
         reward = 0
     end
 
+    ------------------------------------------------------------------
+    -- 3) Checkpoint shaping + visualization
+    ------------------------------------------------------------------
+    local prevCheckpointIdx = getCheckpointIndex(prevProgress)
+    local currCheckpointIdx = getCheckpointIndex(currProgress)
+
+    if currCheckpointIdx > prevCheckpointIdx then
+        -- Crossed at least one new checkpoint this step
+        local gained = currCheckpointIdx - prevCheckpointIdx
+        local extraReward = CHECKPOINT_REWARD * gained
+        reward += extraReward
+
+        -- Optional: visualize & log
+        if info.boatModel then
+            showCheckpointPopup(info.boatModel, currCheckpointIdx)
+        end
+        print(string.format(
+            "[Env] Reached checkpoint %d (progress=%.2f), extraReward=%.1f",
+            currCheckpointIdx, currProgress, extraReward
+        ))
+    end
+
+    ------------------------------------------------------------------
+    -- 4) Episode termination
+    ------------------------------------------------------------------
     if info.finished and not prevInfo.finished then
         reward += FINISH_REWARD
         done = true
@@ -275,5 +360,58 @@ function Env.getRewardAndDone(prevInfo, info, stepCount)
 
     return reward, done
 end
+
+-- old
+-- function Env.getRewardAndDone(prevInfo, info, stepCount)
+--     if not prevInfo or not info then
+--         return 0, false
+--     end
+
+--     local reward = 0
+--     local done = false
+
+--     local prevProgress = prevInfo.progress or 0
+--     local currProgress = info.progress or 0
+--     local deltaProgress = currProgress - prevProgress
+--     local progressReward = PROGRESS_REWARD_SCALE * deltaProgress
+--     reward += progressReward
+
+--     local forwardSpeed = info.forwardSpeed or 0
+--     local velocityReward = 0
+    
+--     if forwardSpeed > 0 then
+--         local speedDiff = math.abs(forwardSpeed - TARGET_FORWARD_SPEED)
+--         velocityReward = VELOCITY_REWARD_SCALE * (1.0 - speedDiff)
+--     else
+--         velocityReward = VELOCITY_REWARD_SCALE * forwardSpeed
+--     end
+    
+--     reward += velocityReward
+
+--     local headingDot = info.headingDot or 0
+--     local alignmentReward = ALIGNMENT_REWARD_SCALE * headingDot
+--     reward += alignmentReward
+
+--     local lateralSpeed = math.abs(info.lateralSpeed or 0)
+--     local lateralPenalty = -LATERAL_PENALTY_SCALE * lateralSpeed
+--     reward += lateralPenalty
+
+--     reward += STEP_PENALTY
+
+--     -- Only allow positive reward if we actually moved closer to the finish
+--     if deltaProgress <= 0 and reward > 0 then
+--         reward = 0
+--     end
+
+--     if info.finished and not prevInfo.finished then
+--         reward += FINISH_REWARD
+--         done = true
+--     elseif info.crashed and not prevInfo.crashed then
+--         reward += CRASH_PENALTY
+--         done = true
+--     end
+
+--     return reward, done
+-- end
 
 return Env
