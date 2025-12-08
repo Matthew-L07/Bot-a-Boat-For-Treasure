@@ -153,6 +153,10 @@ local function startRLControlForBoat(player, boat)
         existing.stop = true
     end
 
+    boat:SetAttribute("Finished", false)
+    boat:SetAttribute("Crashed", false)
+    boat:SetAttribute("Sunk", false)
+
     local navigator = BotNavigatorModule.new(boat)
     if not navigator or not navigator.seat then
         warn("[BotService] Could not create BotNavigator for", player.Name)

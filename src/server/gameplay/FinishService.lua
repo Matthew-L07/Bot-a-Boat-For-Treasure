@@ -139,8 +139,6 @@ local function onPlayerFinished(boat)
     if not player then return end
     if finishedPlayers[player.UserId] then return end -- already finished
 
-    finishedPlayers[player.UserId] = true
-
     print("[FinishService]", player.Name, "has reached the finish line!")
 
     freezeBoat(boat)
