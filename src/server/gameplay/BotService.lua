@@ -21,11 +21,11 @@ local Config = require(NavigationFolder:WaitForChild("Config"))
 local BotService = {}
 
 -- Episode controls
-local MAX_STEPS = Config.maxStepsPerEpisode or 500  -- increased from 400
+local MAX_STEPS = Config.maxStepsPerEpisode or 500
 local EPISODE_DELAY = Config.episodeDelay or 2.0
 
 ----------------------------------------------------------------------
--- Boat discovery helpers (unchanged)
+-- Boat discovery helpers
 ----------------------------------------------------------------------
 
 local function findBoatForPlayer(player)
@@ -74,7 +74,7 @@ local function waitForBoatForPlayer(player, timeoutSeconds)
 end
 
 ----------------------------------------------------------------------
--- Seating and launching (unchanged)
+-- Seating and launching
 ----------------------------------------------------------------------
 
 local function seatPlayerOnBoat(player, boat)
@@ -166,9 +166,12 @@ local function startRLControlForBoat(player, boat)
         lastInfo = nil,
         lastAction = nil,
         stepCount = 0,
-        totalReward = 0,  -- NEW: track cumulative reward
+        totalReward = 0,
     }
     activeControllers[userId] = state
+
+    -- Track whether we actually called Agent:onEpisodeEnd()
+    local episodeEnded = false
 
     print("[BotService] Starting RL navigation loop for", player.Name)
 
@@ -180,10 +183,8 @@ local function startRLControlForBoat(player, boat)
             break
         end
 
-        if boat:GetAttribute("Finished") then
-            print("[BotService] Stopping nav loop for", player.Name, "(boat finished)")
-            break
-        end
+        -- Do NOT early-break on Finished; let Env.getRewardAndDone handle it
+        -- via info.finished so Agent:onEpisodeEnd always runs.
 
         local currentState, info = Env.getState(boat)
         if not currentState then
@@ -191,19 +192,19 @@ local function startRLControlForBoat(player, boat)
             break
         end
 
-        -- Verbose logging for first 3 steps only
-        if state.stepCount <= 3 then
+        state.stepCount += 1
+
+        -- Optional state debug: only for a few initial steps
+        if Config.debugSteps and state.stepCount <= 3 then
             print("[Debug] step", state.stepCount, "state=", table.concat(currentState, ", "))
         end
-
-        state.stepCount += 1
 
         -- Compute reward
         if state.lastState and state.lastAction and state.lastInfo then
             local reward, envDone = Env.getRewardAndDone(state.lastInfo, info, state.stepCount)
             state.totalReward += reward
 
-            if state.stepCount <= 3 or state.stepCount % 50 == 0 then
+            if Config.debugRewards and (state.stepCount <= 3 or state.stepCount % 50 == 0) then
                 print(string.format(
                     "[Debug] step=%d reward=%.3f total=%.2f finished=%s crashed=%s",
                     state.stepCount,
@@ -229,6 +230,7 @@ local function startRLControlForBoat(player, boat)
             Agent:trainStep()
 
             if finalDone then
+                episodeEnded = true
                 if envDone then
                     print(string.format(
                         "[BotService] Episode ended for %s: final_reward=%.2f, total_reward=%.2f",
@@ -249,13 +251,20 @@ local function startRLControlForBoat(player, boat)
         state.lastInfo = info
         state.lastAction = actionId
 
-        -- NEW: Apply action with persistence for smoother control
+        -- Apply action with persistence for smoother control
         local usePersistence = Config.useActionPersistence ~= false  -- default true
         state.navigator:stepAction(actionId, usePersistence)
 
-        -- NEW: Faster decision frequency for more responsive control
-        local stepInterval = Config.stepInterval or 0.3  -- reduced from 1.0
+        -- Faster decision frequency for more responsive control
+        local stepInterval = Config.stepInterval or 0.3
         task.wait(stepInterval)
+    end
+
+    -- If the loop exited without envDone/MAX_STEPS but we collected transitions,
+    -- force an episode end so logs are always posted.
+    if not episodeEnded and #Agent.episodeTransitions > 0 then
+        warn("[BotService] Forcing episode end log (loop exited without envDone/MAX_STEPS)")
+        Agent:onEpisodeEnd()
     end
 
     if activeControllers[userId] == state then
@@ -273,7 +282,7 @@ local function startRLControlForBoat(player, boat)
 end
 
 ----------------------------------------------------------------------
--- Episode management (unchanged)
+-- Episode management
 ----------------------------------------------------------------------
 
 local function runSingleEpisodeForPlayer(player)
@@ -349,7 +358,7 @@ local function runEpisodesLoopForPlayer(player)
 end
 
 ----------------------------------------------------------------------
--- Player hooks (unchanged)
+-- Player hooks
 ----------------------------------------------------------------------
 
 local function onCharacterAdded(player, _character)
@@ -387,6 +396,8 @@ end
 
 function BotService.start()
     print("[BotService] Starting...")
+
+    math.randomseed(tick())
 
     print("[BotService] DockService has launchBoat:", DockService and DockService.launchBoat)
 

@@ -339,12 +339,21 @@ function M.clearBoatsForPlayer(player)
     local userId = player.UserId
     dockedBoats[userId] = nil
 
+    -- Destroy any full boats for this player
     for _, model in ipairs(Workspace:GetChildren()) do
         if model:IsA("Model") and model:GetAttribute(Constants.BOAT_OWNER_ATTR) == userId then
             model:Destroy()
         end
     end
+
+    -- NEW: also destroy detached debris tagged with this owner
+    for _, inst in ipairs(Workspace:GetDescendants()) do
+        if inst:IsA("BasePart") and inst:GetAttribute(Constants.BOAT_OWNER_ATTR) == userId then
+            inst:Destroy()
+        end
+    end
 end
+
 
 ----------------------------------------------------------------------
 -- Lifecycle

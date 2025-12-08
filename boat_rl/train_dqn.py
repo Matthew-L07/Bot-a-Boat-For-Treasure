@@ -11,36 +11,103 @@ from torch.utils.data import TensorDataset, DataLoader
 
 
 # -----------------------------
-# Data loading
+# Data loading (episode-aware with improved filtering)
 # -----------------------------
-def load_transitions(log_dir: str = "logs") -> Tuple[List[dict], int, int]:
+def load_transitions(
+    log_dir: str = "logs",
+    elite_fraction: float = 0.5,
+    min_progress_threshold: float = 0.2,  # NEW: Keep episodes with >20% progress
+) -> Tuple[List[dict], int, int]:
+    """
+    Load transitions from logs, treating each file as a single episode.
+
+    Improvements:
+    - Keeps episodes with meaningful progress (>20%) OR top 50% by return
+    - This ensures we learn from partial successes, not just crashes
+    """
     pattern = os.path.join(log_dir, "transitions_*.json")
     files = sorted(glob.glob(pattern))
 
     if not files:
         raise FileNotFoundError(f"No transition files found at {pattern}")
 
-    all_transitions: List[dict] = []
+    episodes = []
+
     for path in files:
         with open(path, "r") as f:
             data = json.load(f)
-        if isinstance(data, dict):
-            data = [data]
-        all_transitions.extend(data)
 
-    if not all_transitions:
-        raise ValueError("Loaded transition files but found no transitions.")
+        if isinstance(data, dict) and "transitions" in data:
+            transitions = data["transitions"]
+        elif isinstance(data, list):
+            transitions = data
+        else:
+            transitions = [data]
 
-    # Infer dimensions from data
-    state_dim = len(all_transitions[0]["s"])
-    num_actions = max(t["a"] for t in all_transitions)
+        if not transitions:
+            continue
 
-    print(f"Loaded {len(all_transitions)} transitions from {len(files)} files.")
-    print(f"Inferred state_dim = {state_dim}, num_actions = {num_actions}")
+        ep_return = 0.0
+        max_progress = 0.0
+        
+        for t in transitions:
+            ep_return += float(t.get("r", 0.0))
+            # Track maximum progress reached (state[0] is progress)
+            if "s" in t and len(t["s"]) > 0:
+                max_progress = max(max_progress, t["s"][0])
+
+        episodes.append(
+            {
+                "file": path,
+                "transitions": transitions,
+                "return": ep_return,
+                "max_progress": max_progress,
+            }
+        )
+
+    if not episodes:
+        raise ValueError("Loaded log files but found no transitions in any episode.")
+
+    # NEW: Two-stage filtering
+    # Stage 1: Keep episodes with meaningful progress
+    progress_filtered = [e for e in episodes if e["max_progress"] >= min_progress_threshold]
     
-    # Validate dimensions match expectations
-    if state_dim != 9:
-        print(f"WARNING: Expected state_dim=9, got {state_dim}")
+    # Stage 2: If we filtered out too many, fall back to top elite_fraction by return
+    num_episodes = len(episodes)
+    min_keep = max(1, int(num_episodes * elite_fraction))
+    
+    if len(progress_filtered) < min_keep:
+        print(f"Progress filter kept {len(progress_filtered)} episodes, using return-based filter instead")
+        episodes.sort(key=lambda e: e["return"])
+        elite_episodes = episodes[-min_keep:]
+    else:
+        print(f"Progress filter kept {len(progress_filtered)}/{num_episodes} episodes (progress >= {min_progress_threshold})")
+        elite_episodes = progress_filtered
+
+    # Flatten transitions from selected episodes
+    all_transitions: List[dict] = []
+    for ep in elite_episodes:
+        all_transitions.extend(ep["transitions"])
+
+    # Infer state_dim and num_actions from selected transitions
+    first_transition = elite_episodes[0]["transitions"][0]
+    state_dim = len(first_transition["s"])
+    num_actions = max(t["a"] for ep in elite_episodes for t in ep["transitions"])
+
+    # Calculate statistics
+    returns = [e["return"] for e in elite_episodes]
+    progresses = [e["max_progress"] for e in elite_episodes]
+    
+    print(f"\n=== Episode Statistics ===")
+    print(f"Total episodes: {num_episodes}")
+    print(f"Selected episodes: {len(elite_episodes)}")
+    print(f"Episode returns: min={min(returns):.2f}, median={sorted(returns)[len(returns)//2]:.2f}, max={max(returns):.2f}")
+    print(f"Max progress: min={min(progresses):.2f}, median={sorted(progresses)[len(progresses)//2]:.2f}, max={max(progresses):.2f}")
+    print(f"Total transitions: {len(all_transitions)}")
+    print(f"Inferred state_dim={state_dim}, num_actions={num_actions}")
+
+    if state_dim != 11:
+        print(f"WARNING: Expected state_dim=11, got {state_dim}")
     if num_actions != 5:
         print(f"WARNING: Expected num_actions=5, got {num_actions}")
 
@@ -65,7 +132,9 @@ def transitions_to_tensors(
         d = t["d"]
 
         if len(s) != state_dim or len(ns) != state_dim:
-            raise ValueError(f"Inconsistent state dimension: expected {state_dim}, got s={len(s)}, ns={len(ns)}")
+            raise ValueError(
+                f"Inconsistent state dimension: expected {state_dim}, got s={len(s)}, ns={len(ns)}"
+            )
 
         states.append(s)
         actions.append(a - 1)  # convert to 0-based for PyTorch
@@ -83,18 +152,17 @@ def transitions_to_tensors(
 
 
 # -----------------------------
-# DQN model
+# DQN model (with Double DQN support)
 # -----------------------------
 class DQN(nn.Module):
     """
-    DQN architecture for 9-dimensional state space and 5 actions
-    Architecture: 9 -> 128 -> 128 -> 5
+    DQN architecture: state_dim -> 128 -> 128 -> num_actions
     """
     def __init__(self, state_dim: int, num_actions: int):
         super().__init__()
         
-        if state_dim != 9:
-            print(f"WARNING: DQN initialized with state_dim={state_dim}, expected 9")
+        if state_dim != 11:
+            print(f"WARNING: DQN initialized with state_dim={state_dim}, expected 11")
         if num_actions != 5:
             print(f"WARNING: DQN initialized with num_actions={num_actions}, expected 5")
         
@@ -119,20 +187,27 @@ class DQN(nn.Module):
 
 
 # -----------------------------
-# Training loop
+# Training loop (with Double DQN)
 # -----------------------------
 def train_dqn(
     log_dir: str = "logs",
     batch_size: int = 64,
-    num_epochs: int = 5,          # fewer epochs over offline data
-    gamma: float = 0.99,
-    lr: float = 5e-5,             # slightly smaller LR for stability
+    num_epochs: int = 10,
+    gamma: float = 0.95,             # Shorter horizon for tactical navigation
+    lr: float = 1e-4,
     device: str = "cpu",
     save_path: str = "dqn_weights.pth",
     best_save_path: str = "dqn_weights_best.pth",
+    elite_fraction: float = 0.5,
+    min_progress_threshold: float = 0.2,
+    use_double_dqn: bool = True,     # NEW: Enable Double DQN
 ):
-    # Load data
-    transitions, state_dim, num_actions = load_transitions(log_dir)
+    # Load data with improved filtering
+    transitions, state_dim, num_actions = load_transitions(
+        log_dir=log_dir,
+        elite_fraction=elite_fraction,
+        min_progress_threshold=min_progress_threshold,
+    )
     states, actions, rewards, next_states, dones = transitions_to_tensors(
         transitions, state_dim
     )
@@ -143,26 +218,25 @@ def train_dqn(
     device = torch.device(device)
     model = DQN(state_dim, num_actions).to(device)
     target_model = DQN(state_dim, num_actions).to(device)
-    target_model.load_state_dict(model.state_dict())  # start in sync
+    target_model.load_state_dict(model.state_dict())
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    loss_fn = nn.SmoothL1Loss()  # Huber loss is more stable than pure MSE
+    loss_fn = nn.SmoothL1Loss()  # Huber loss
 
-    print(f"\nStarting training on {device}...")
-    print(f"Model architecture: {state_dim} -> 128 -> 128 -> {num_actions}")
-    print(
-        f"Dataset size: {len(dataset)}, "
-        f"batch_size: {batch_size}, "
-        f"epochs: {num_epochs}, "
-        f"lr: {lr}, "
-        f"gamma: {gamma}"
-    )
+    print(f"\n=== Training Configuration ===")
+    print(f"Device: {device}")
+    print(f"Architecture: {state_dim} -> 128 -> 128 -> {num_actions}")
+    print(f"Dataset size: {len(dataset)}")
+    print(f"Batch size: {batch_size}")
+    print(f"Epochs: {num_epochs}")
+    print(f"Learning rate: {lr}")
+    print(f"Gamma: {gamma}")
+    print(f"Double DQN: {use_double_dqn}")
 
-    # Print sample statistics
-    print(f"\nDataset statistics:")
-    print(f"  Rewards: min={rewards.min():.3f}, max={rewards.max():.3f}, mean={rewards.mean():.3f}")
-    print(f"  States: min={states.min():.3f}, max={states.max():.3f}")
-    print(f"  Actions distribution: {torch.bincount(actions + 1)}")
+    print(f"\n=== Dataset Statistics ===")
+    print(f"Rewards: min={rewards.min():.3f}, max={rewards.max():.3f}, mean={rewards.mean():.3f}, std={rewards.std():.3f}")
+    print(f"States: min={states.min():.3f}, max={states.max():.3f}")
+    print(f"Actions distribution: {torch.bincount(actions)}")
     print()
 
     model.train()
@@ -180,13 +254,20 @@ def train_dqn(
             ]
 
             # Q(s, a)
-            q_values = model(batch_states)  # (B, num_actions)
+            q_values = model(batch_states)
             q_sa = q_values.gather(1, batch_actions.unsqueeze(1)).squeeze(1)
 
-            # max_a' Q_target(s', a')
+            # Target computation
             with torch.no_grad():
-                next_q_values = target_model(batch_next_states)
-                max_next_q, _ = next_q_values.max(dim=1)
+                if use_double_dqn:
+                    # Double DQN: use online network to select actions, target network to evaluate
+                    next_actions = model(batch_next_states).argmax(dim=1)
+                    max_next_q = target_model(batch_next_states).gather(1, next_actions.unsqueeze(1)).squeeze(1)
+                else:
+                    # Standard DQN: use target network for both selection and evaluation
+                    next_q_values = target_model(batch_next_states)
+                    max_next_q, _ = next_q_values.max(dim=1)
+                
                 targets = batch_rewards + gamma * (1.0 - batch_dones) * max_next_q
 
             loss = loss_fn(q_sa, targets)
@@ -202,10 +283,10 @@ def train_dqn(
         avg_loss = epoch_loss / max(num_batches, 1)
         print(f"Epoch {epoch}/{num_epochs} - avg loss: {avg_loss:.6f}")
 
-        # Update target network once per epoch
+        # Update target network every epoch
         target_model.load_state_dict(model.state_dict())
 
-        # Save best checkpoint by avg loss
+        # Save best checkpoint
         if avg_loss < best_loss:
             best_loss = avg_loss
             torch.save(
@@ -215,12 +296,14 @@ def train_dqn(
                     "model_state_dict": model.state_dict(),
                     "epoch": epoch,
                     "loss": avg_loss,
+                    "gamma": gamma,
+                    "double_dqn": use_double_dqn,
                 },
                 best_save_path,
             )
             print(f"  → Saved new best model (loss: {avg_loss:.6f})")
 
-    # Save final weights (last epoch)
+    # Save final weights
     torch.save(
         {
             "state_dim": state_dim,
@@ -228,11 +311,19 @@ def train_dqn(
             "model_state_dict": model.state_dict(),
             "epoch": num_epochs,
             "loss": avg_loss,
+            "gamma": gamma,
+            "double_dqn": use_double_dqn,
         },
         save_path,
     )
-    print(f"\nSaved final DQN weights to {save_path}")
-    print(f"Saved best (by avg loss) DQN weights to {best_save_path} with loss {best_loss:.6f}")
+    
+    print(f"\n=== Training Complete ===")
+    print(f"Final model saved to: {save_path}")
+    print(f"Best model saved to: {best_save_path} (loss: {best_loss:.6f})")
+    print(f"\nNext steps:")
+    print(f"1. Run: python export_weights.py")
+    print(f"2. Copy the generated DqnWeights.lua to your Roblox project")
+    print(f"3. Test the updated bot in Roblox")
 
 
 if __name__ == "__main__":

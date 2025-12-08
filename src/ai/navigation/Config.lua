@@ -1,5 +1,5 @@
 -- ai/navigation/Config.lua
--- Enhanced configuration with action persistence and improved rewards
+-- Enhanced configuration with improved safety and training settings
 
 local Config = {}
 
@@ -14,16 +14,21 @@ local Config = {}
 --   4: SHARP_LEFT
 --   5: SHARP_RIGHT
 Config.numActions = 5
-Config.stateDim = 9    -- 9-dim state: progress, lateral, heading, velocities, distances
+
+-- 11-dim state:
+--   progress, lateral, headingDot,
+--   forwardSpeed, lateralSpeed, velocityMag,
+--   distFarLeft, distLeft, distCenter, distRight, distFarRight
+Config.stateDim = 11
 
 ----------------------------------------------------------------------
 -- Episode Control
 ----------------------------------------------------------------------
 
-Config.maxStepsPerEpisode = 500  -- Increased from 400
-Config.episodeDelay = 2.0        -- seconds between episodes
-Config.stepInterval = 0.1        -- faster decision frequency (was 1.0)
-Config.useActionPersistence = true  -- enable action holding
+Config.maxStepsPerEpisode = 800
+Config.episodeDelay = 2.0
+Config.stepInterval = 0.1
+Config.useActionPersistence = true
 
 ----------------------------------------------------------------------
 -- Action Persistence Settings
@@ -33,52 +38,81 @@ Config.minActionHoldSteps = 2
 Config.maxActionHoldSteps = 5
 
 ----------------------------------------------------------------------
+-- Vision / sensing
+----------------------------------------------------------------------
+
+-- How far ahead rays look (studs) for RL. Obstacles beyond this are treated as "far" (distance = 1.0)
+Config.visionMaxDistance = 120    -- must be <= WorldConfig.OBSTACLE_SENSE_DISTANCE
+
+----------------------------------------------------------------------
 -- Reward Function Parameters
 ----------------------------------------------------------------------
 
 -- Core rewards
-Config.progressRewardScale = 3.0    -- Increased from 1.0
-Config.stepPenalty = -0.005         -- Small time penalty
-Config.finishReward = 1000.0          -- Increased from 10.0
-Config.crashPenalty = -100.0         -- Increased magnitude from -5.0
+Config.progressRewardScale = 5.0
+Config.stepPenalty         = -0.001
+Config.finishReward        = 500.0
+Config.crashPenalty        = -30.0
+
+-- Checkpoints (normalized progress in [0,1])
+Config.checkpointStep      = 0.1    -- every 10% of course
+Config.checkpointReward    = 10.0   -- bonus per checkpoint crossed
 
 -- Velocity-based rewards
-Config.velocityRewardScale = 0.5
-Config.targetForwardSpeed = 0.2
-Config.lateralPenaltyScale = 0.3
+Config.velocityRewardScale = 0.3
+Config.targetForwardSpeed  = 0.2
+Config.lateralPenaltyScale = 0.15   -- sideways sliding penalty
 
 -- Alignment rewards
-Config.alignmentRewardScale = 0.2
+Config.alignmentRewardScale = 0.1
+
+-- Centerline shaping (distance from river center)
+Config.centerPenaltyScale   = 0.1   -- Reduced from 0.2 to allow more exploration
+
+-- Obstacle proximity shaping (walls/rocks via rays)
+Config.obstacleProxPenaltyScale = 0.15  -- Increased from 0.1 (stronger avoidance signal)
+Config.obstacleProxThreshold    = 0.5   -- Increased from 0.4 (earlier warning)
 
 ----------------------------------------------------------------------
--- Exploration Parameters
+-- Exploration Parameters (IMPROVED: episode-based decay)
 ----------------------------------------------------------------------
 
-Config.epsilonStart = 0.2
-Config.epsilonEnd   = 0.05
-Config.epsilonDecaySteps = 10000
+Config.epsilonStart      = 0.6
+Config.epsilonEnd        = 0.05
+Config.epsilonDecaySteps = 30000  -- DEPRECATED: now using episode-based decay in Agent.lua
 
 ----------------------------------------------------------------------
 -- Curriculum Learning
 ----------------------------------------------------------------------
 
--- Still used as a generic “early vs late episodes” toggle, but
--- no longer tied to IDLE/REVERSE (since those actions are removed).
 Config.lowPriorityActionThreshold = 50
 
 ----------------------------------------------------------------------
 -- Training Parameters
 ----------------------------------------------------------------------
 
-Config.trainingEnabled = false      -- Training happens offline
-Config.gamma = 0.99
-Config.batchSize = 32
-Config.minReplaySize = 1000
-Config.replayBufferSize = 50000
+Config.trainingEnabled   = true
+Config.gamma             = 0.95  -- Reduced from 0.99 for tactical navigation
+Config.batchSize         = 32
+Config.minReplaySize     = 1000
+Config.replayBufferSize  = 50000
 
+----------------------------------------------------------------------
+-- Debug / logging toggles
+----------------------------------------------------------------------
 
--- Turn this OFF (false) while you're testing behavior.
--- Turn it ON (true) when you want to collect data for train_dqn.py.
+-- Visualize raycasts with neon parts
+Config.debugRays = false -- Set to true only when debugging specific episodes
+
+-- Per-step textual debug:
+Config.debugSteps          = false  -- log full state each step
+Config.debugRewards        = false  -- log reward each step
+Config.debugActions        = false  -- log every new BotNavigator action
+Config.debugRewardSummary  = false  -- Env.lua reward summary print every N steps
+Config.debugTransitionHttp = false  -- verbose HTTP logging in Agent:onEpisodeEnd
+
+-- Turn this ON when you want to collect data for train_dqn.py.
+-- IMPORTANT: Make sure Flask server (log_data.py) is running first!
 Config.enableTransitionLogging = true
 
 return Config

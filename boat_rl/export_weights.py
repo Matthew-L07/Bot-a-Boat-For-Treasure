@@ -29,8 +29,8 @@ def pytorch_to_json(checkpoint_path: Path) -> dict:
     checkpoint = torch.load(checkpoint_path, map_location='cpu')
     
     state_dict = checkpoint['model_state_dict']
-    state_dim = checkpoint.get('state_dim', 9)
-    num_actions = checkpoint.get('num_actions', 7)
+    state_dim = checkpoint.get('state_dim', 11)
+    num_actions = checkpoint.get('num_actions', 5)
     
     print(f"Converting model with state_dim={state_dim}, num_actions={num_actions}")
     

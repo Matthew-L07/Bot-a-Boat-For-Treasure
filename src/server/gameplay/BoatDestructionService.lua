@@ -148,6 +148,11 @@ local function breakPieceOff(boat, piece)
     print("[BoatDestruction] Breaking piece:", piece.Name, "from boat")
     
     piece:SetAttribute("Broken", true)
+
+    local ownerId = boat:GetAttribute(Constants.BOAT_OWNER_ATTR)
+    if ownerId then
+        piece:SetAttribute(Constants.BOAT_OWNER_ATTR, ownerId)
+    end
     
     -- Check if this is the center block
     local isCenterBlock = (piece.Name == "CenterBlock")

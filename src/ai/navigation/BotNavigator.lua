@@ -1,5 +1,7 @@
 -- ai/navigation/BotNavigator.lua
--- Action-space controller with action persistence for smoother movement
+-- Action-space controller with REDUCED action persistence for smoother movement
+
+local Config = require(script.Parent:WaitForChild("Config"))
 
 local BotNavigator = {}
 BotNavigator.__index = BotNavigator
@@ -12,7 +14,7 @@ BotNavigator.__index = BotNavigator
 --  5: SHARP_RIGHT     - aggressive right turn with moderate speed
 
 local ACTIONS = {
-        {
+    {
         id = 1,
         name = "FORWARD",
         throttle = 1.0,
@@ -21,32 +23,30 @@ local ACTIONS = {
     {
         id = 2,
         name = "FORWARD_LEFT",
-        throttle = 1.0,   -- was 0.8
+        throttle = 1.0,
         steer = -0.5,     -- slightly softer turn
     },
     {
         id = 3,
         name = "FORWARD_RIGHT",
-        throttle = 1.0,   -- was 0.8
+        throttle = 1.0,
         steer = 0.5,
     },
     {
         id = 4,
         name = "SHARP_LEFT",
-        throttle = 0.9,   -- was 0.5
+        throttle = 0.9,
         steer = -1.0,
     },
     {
         id = 5,
         name = "SHARP_RIGHT",
-        throttle = 0.9,   -- was 0.5
+        throttle = 0.9,
         steer = 1.0,
     },
 }
 
--- Action masking: returns list of valid action IDs.
--- We keep the enableLowPriority arg for compatibility, but ignore it
--- since there are no low-priority actions anymore.
+-- Action masking: returns list of valid action IDs
 function BotNavigator.getValidActions(enableLowPriority)
     local valid = {}
     for _, action in ipairs(ACTIONS) do
@@ -106,9 +106,7 @@ function BotNavigator:applyAction(action)
     self.seat.SteerFloat = action.steer
 end
 
--- Step with action persistence: hold actions for multiple steps to build momentum
--- ai/navigation/BotNavigator.lua (inside the module)
-
+-- IMPROVED: Reduced hold times for smoother, more responsive movement
 function BotNavigator:stepActionWithPersistence(actionId, defaultMinHold, defaultMaxHold)
     local action = ACTIONS[actionId]
     if not action then
@@ -129,18 +127,21 @@ function BotNavigator:stepActionWithPersistence(actionId, defaultMinHold, defaul
     local minHold, maxHold
 
     if id == 1 then
-        -- FORWARD: long holds for smooth straight motion
-        minHold, maxHold = 4, 8
-    elseif id == 2 or id == 3 then
-        -- FORWARD_LEFT / FORWARD_RIGHT: medium hold, gentle arcs
+        -- FORWARD: Medium-long holds for smooth straight motion
+        -- REDUCED from (4, 8) to avoid overly committed straight paths
         minHold, maxHold = 3, 5
+    elseif id == 2 or id == 3 then
+        -- FORWARD_LEFT / FORWARD_RIGHT: Short holds for responsive turning
+        -- REDUCED from (3, 5) to allow quicker corrections
+        minHold, maxHold = 2, 3
     elseif id == 4 or id == 5 then
-        -- SHARP_LEFT / SHARP_RIGHT: very short taps to avoid over-rotation
+        -- SHARP_LEFT / SHARP_RIGHT: Very short taps
+        -- Keep at (1, 2) - already good
         minHold, maxHold = 1, 2
     else
         -- Fallback to defaults if we ever add more actions
         minHold = defaultMinHold or 2
-        maxHold = defaultMaxHold or 5
+        maxHold = defaultMaxHold or 3
     end
 
     self.actionHoldTarget = math.random(minHold, maxHold)
@@ -148,16 +149,17 @@ function BotNavigator:stepActionWithPersistence(actionId, defaultMinHold, defaul
 
     self:applyAction(action)
 
-    print(string.format(
-        "[BotNavigator] New action %s (id=%d): throttle=%.2f steer=%.2f, holding for %d steps",
-        action.name,
-        action.id,
-        action.throttle,
-        action.steer,
-        self.actionHoldTarget
-    ))
+    if Config.debugActions then
+        print(string.format(
+            "[BotNavigator] New action %s (id=%d): throttle=%.2f steer=%.2f, holding for %d steps",
+            action.name,
+            action.id,
+            action.throttle,
+            action.steer,
+            self.actionHoldTarget
+        ))
+    end
 end
-
 
 -- Standard step for RL agent (with optional persistence)
 function BotNavigator:stepAction(actionId, usePersistence)
@@ -170,6 +172,16 @@ function BotNavigator:stepAction(actionId, usePersistence)
             return
         end
         self:applyAction(action)
+
+        if Config.debugActions then
+            print(string.format(
+                "[BotNavigator] One-step action %s (id=%d): throttle=%.2f steer=%.2f",
+                action.name,
+                action.id,
+                action.throttle,
+                action.steer
+            ))
+        end
     end
 end
 
