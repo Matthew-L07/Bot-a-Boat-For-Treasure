@@ -44,6 +44,9 @@ WorldConfig.ROCK_COUNT        = 16
 WorldConfig.ROCK_RADIUS_RANGE = Vector2.new(4, 8)
 WorldConfig.ROCK_MIN_SPACING  = 35
 
+-- no-rock zone around the dock / boat spawn
+WorldConfig.ROCK_SAFE_RADIUS = 120 
+
 do
     local halfW = WorldConfig.RIVER_WIDTH * 0.5
     local halfL = WorldConfig.RIVER_LENGTH * 0.5

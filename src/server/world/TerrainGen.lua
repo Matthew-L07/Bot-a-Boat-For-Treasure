@@ -47,6 +47,16 @@ local function scatterRocks()
         return true
     end
 
+    local spawnPos = WorldConfig.BOAT_WATER_SPAWN.Position
+    local safeRadius = WorldConfig.ROCK_SAFE_RADIUS or 0
+    local safeRadiusSq = safeRadius * safeRadius  -- squared radius
+
+    local function isInSafeZone(x, z)
+        local dx = x - spawnPos.X
+        local dz = z - spawnPos.Z
+        return (dx*dx + dz*dz) <= safeRadiusSq
+    end
+
     for _ = 1, WorldConfig.ROCK_COUNT do
         local tries = 0
         local ok, x, z = false, nil, nil
@@ -54,7 +64,7 @@ local function scatterRocks()
             tries += 1
             local candX = rand(cfg.xMin, cfg.xMax)
             local candZ = rand(cfg.zMin, cfg.zMax)
-            if isFarEnough(candX, candZ) then
+            if isFarEnough(candX, candZ) and not isInSafeZone(candX, candZ) then
                 ok, x, z = true, candX, candZ
                 break
             end
