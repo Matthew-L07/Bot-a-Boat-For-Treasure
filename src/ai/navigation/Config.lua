@@ -50,8 +50,8 @@ Config.visionMaxDistance = 120    -- must be <= WorldConfig.OBSTACLE_SENSE_DISTA
 
 -- Core rewards
 Config.progressRewardScale = 5.0
-Config.stepPenalty         = -0.001
-Config.finishReward        = 500.0
+Config.stepPenalty         = -0.005 -- more negative
+Config.finishReward        = 800.0 -- larger terminal bonus
 Config.crashPenalty        = -30.0
 
 -- Checkpoints (normalized progress in [0,1])
@@ -102,7 +102,7 @@ Config.replayBufferSize  = 50000
 ----------------------------------------------------------------------
 
 -- Visualize raycasts with neon parts
-Config.debugRays = false -- Set to true only when debugging specific episodes
+Config.debugRays = true -- Set to true only when debugging specific episodes
 
 -- Per-step textual debug:
 Config.debugSteps          = false  -- log full state each step

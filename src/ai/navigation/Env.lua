@@ -357,17 +357,31 @@ function Env.getRewardAndDone(prevInfo, info, stepCount)
     reward += STEP_PENALTY
 
     -- Only allow positive reward if making progress
-    if deltaProgress <= 0 and reward > 0 then
-        reward = 0
+    if deltaProgress <= 0 then
+        -- If shaping accidentally made this step positive, clamp to 0
+        if reward > 0 then
+            reward = 0
+        end
+        -- Extra penalty for not progressing
+        reward += STEP_PENALTY   -- apply one more step penalty
     end
 
-    -- Terminal conditions
+    -- Terminal conditions (finish vs crash)
+    -- "finish sooner" objective by subtracting a small cost proportional to the number of steps.
+
     if info.finished and not prevInfo.finished then
-        reward += FINISH_REWARD
+        -- Encourage fast completion: fewer steps => higher final reward
+        local steps = stepCount or 0
+        local timeCost = 0.02 * steps   -- tune this coefficient as needed
+
+        reward += (FINISH_REWARD - timeCost)
         done = true
+        return reward, done
+
     elseif info.crashed and not prevInfo.crashed then
         reward += CRASH_PENALTY
         done = true
+        return reward, done
     end
 
     return reward, done

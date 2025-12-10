@@ -126,7 +126,7 @@ def transitions_to_tensors(
 
     for t in transitions:
         s = t["s"]
-        a = t["a"]          # 1-based from Roblox
+        a = t["a"]
         r = t["r"]
         ns = t["ns"]
         d = t["d"]
@@ -137,7 +137,7 @@ def transitions_to_tensors(
             )
 
         states.append(s)
-        actions.append(a - 1)  # convert to 0-based for PyTorch
+        actions.append(a - 1)
         rewards.append(r)
         next_states.append(ns)
         dones.append(1.0 if d else 0.0)
