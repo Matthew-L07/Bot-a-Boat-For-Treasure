@@ -1,8 +1,9 @@
 -- ai/navigation/Env.lua
--- Fixed raycasting that properly accounts for boat size without breaking thresholds
+-- Fixed: Debug rays are now properly ignored by the raycaster so they don't cause collisions
 
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Debris = game:GetService("Debris")
 
 local Env = {}
 
@@ -34,6 +35,19 @@ end
 local WorldConfig = tryGetWorldConfig()
 
 ----------------------------------------------------------------------
+-- Setup Debug Folder (Prevents self-collision)
+----------------------------------------------------------------------
+
+-- Create a dedicated folder for debug rays so we can filter it out easily
+local DEBUG_FOLDER_NAME = "BotDebugRays"
+local debugFolder = Workspace:FindFirstChild(DEBUG_FOLDER_NAME)
+if not debugFolder then
+    debugFolder = Instance.new("Folder")
+    debugFolder.Name = DEBUG_FOLDER_NAME
+    debugFolder.Parent = Workspace
+end
+
+----------------------------------------------------------------------
 -- Geometry constants
 ----------------------------------------------------------------------
 
@@ -53,15 +67,11 @@ local RIVER_HALF_WIDTH = WorldConfig and WorldConfig.RIVER_HALF_WIDTH or 150
 
 local MAX_RAY_DISTANCE = WorldConfig and WorldConfig.OBSTACLE_SENSE_DISTANCE or 200
 
--- RL vision range
 local VISION_MAX_DISTANCE = (Config and Config.visionMaxDistance) or MAX_RAY_DISTANCE
 
--- CRITICAL FIX: Cast rays from further ahead to account for boat size
--- This gives the bot more warning time without breaking the threshold logic
-local RAYCAST_FORWARD_OFFSET = 15  -- Cast from 15 studs ahead (was 10)
+local RAYCAST_FORWARD_OFFSET = 15
 local RAYCAST_HEIGHT_OFFSET = 3
 
--- Forward fan: 5 rays
 local FAR_LEFT_DIR_LOCAL      = Vector3.new(-1,   0, -1).Unit
 local LEFT_DIR_LOCAL          = Vector3.new(-0.5, 0, -1).Unit
 local CENTER_DIR_LOCAL        = Vector3.new(0,    0, -1)
@@ -97,35 +107,17 @@ local DEBUG_REWARD_SUMMARY = Config and Config.debugRewardSummary
 ----------------------------------------------------------------------
 
 local function clamp01(x)
-    if x < 0 then
-        return 0
-    elseif x > 1 then
-        return 1
-    else
-        return x
-    end
+    if x < 0 then return 0 elseif x > 1 then return 1 else return x end
 end
 
 local function clampSymmetric(x, limit)
-    if x > limit then
-        return limit
-    elseif x < -limit then
-        return -limit
-    else
-        return x
-    end
+    if x > limit then return limit elseif x < -limit then return -limit else return x end
 end
 
 local function getBoatRoot(boat)
-    if not boat or not boat:IsA("Model") then
-        return nil
-    end
-
+    if not boat or not boat:IsA("Model") then return nil end
     local root = boat.PrimaryPart
-    if root and root:IsA("BasePart") then
-        return root
-    end
-
+    if root and root:IsA("BasePart") then return root end
     return boat:FindFirstChildWhichIsA("BasePart")
 end
 
@@ -137,33 +129,47 @@ end
 
 local function computeLateralOffset(pos)
     local dx = pos.X - RIVER_CENTER_X
-    if RIVER_HALF_WIDTH <= 0 then
-        return 0
-    end
-    local t = dx / RIVER_HALF_WIDTH
-    return clampSymmetric(t, 1)
+    if RIVER_HALF_WIDTH <= 0 then return 0 end
+    return clampSymmetric(dx / RIVER_HALF_WIDTH, 1)
 end
 
 local function decomposeVelocity(root)
     local vel = root.AssemblyLinearVelocity or Vector3.new(0, 0, 0)
     local forward = root.CFrame.LookVector
     local right = root.CFrame.RightVector
-
-    local forwardSpeed = vel:Dot(forward)
-    local lateralSpeed = vel:Dot(right)
-
-    local speedNorm = 100
-    return forwardSpeed / speedNorm, lateralSpeed / speedNorm
+    return vel:Dot(forward) / 100, vel:Dot(right) / 100
 end
 
 local function getVelocityMagnitude(root)
-    local vel = root.AssemblyLinearVelocity or Vector3.new(0, 0, 0)
-    local magnitude = vel.Magnitude
-    return magnitude / 100
+    return (root.AssemblyLinearVelocity or Vector3.new(0,0,0)).Magnitude / 100
 end
 
 ----------------------------------------------------------------------
--- Optimized raycasting (minimal debug overhead)
+-- Visualization Helper
+----------------------------------------------------------------------
+
+local function visualizeRay(origin, direction, distance, didHit)
+    if not (Config and Config.debugRays) then return end
+
+    local p = Instance.new("Part")
+    p.Anchored = true
+    p.CanCollide = false
+    p.CastShadow = false
+    p.Material = Enum.Material.Neon
+    p.Size = Vector3.new(0.1, 0.1, distance)
+    
+    p.Color = didHit and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
+    
+    local midpoint = origin + direction * (distance / 2)
+    p.CFrame = CFrame.lookAt(midpoint, origin + direction * distance)
+    
+    -- IMPORTANT: Parent to the excluded folder!
+    p.Parent = debugFolder 
+    Debris:AddItem(p, 0.1) 
+end
+
+----------------------------------------------------------------------
+-- Optimized raycasting (Filtered)
 ----------------------------------------------------------------------
 
 local function rayDistanceNormalized(root, localDir)
@@ -172,196 +178,116 @@ local function rayDistanceNormalized(root, localDir)
     local cf = root.CFrame
     local worldDir = cf:VectorToWorldSpace(localDir)
 
-    -- Cast from further ahead to give more warning time
     local origin = root.Position 
         + cf.LookVector * RAYCAST_FORWARD_OFFSET
         + Vector3.new(0, RAYCAST_HEIGHT_OFFSET, 0)
 
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = { root.Parent }
+    -- CRITICAL FIX: Exclude the debug folder so rays don't hit their own visuals
+    params.FilterDescendantsInstances = { root.Parent, debugFolder }
     params.IgnoreWater = true
 
     local result = Workspace:Raycast(origin, worldDir * VISION_MAX_DISTANCE, params)
+    
     if not result then
+        visualizeRay(origin, worldDir, VISION_MAX_DISTANCE, false)
         return 1.0
     end
 
     local dist = (result.Position - origin).Magnitude
+    visualizeRay(origin, worldDir, dist, true)
     
-    -- CRITICAL: Don't adjust distance here - just return normalized value
-    -- The safety thresholds in Agent.lua are calibrated for raw normalized distances
     return clamp01(dist / VISION_MAX_DISTANCE)
 end
 
 ----------------------------------------------------------------------
--- Public API: getState
+-- Public API
 ----------------------------------------------------------------------
 
 function Env.getState(boat)
     local root = getBoatRoot(boat)
-    if not root then
-        return nil, nil
-    end
+    if not root then return nil, nil end
 
     local pos = root.Position
-
     local progress = computeProgress(pos)
     local lateral = computeLateralOffset(pos)
 
     local headingForward = root.CFrame.LookVector
-    local headingDot = headingForward:Dot(RIVER_FORWARD)
-    headingDot = clampSymmetric(headingDot, 1)
+    local headingDot = clampSymmetric(headingForward:Dot(RIVER_FORWARD), 1)
 
     local forwardSpeed, lateralSpeed = decomposeVelocity(root)
     local velocityMag = getVelocityMagnitude(root)
 
-    -- 5-ray forward fan
     local distFarLeft  = rayDistanceNormalized(root, FAR_LEFT_DIR_LOCAL)
     local distLeft     = rayDistanceNormalized(root, LEFT_DIR_LOCAL)
     local distCenter   = rayDistanceNormalized(root, CENTER_DIR_LOCAL)
     local distRight    = rayDistanceNormalized(root, RIGHT_DIR_LOCAL)
     local distFarRight = rayDistanceNormalized(root, FAR_RIGHT_DIR_LOCAL)
 
-    -- State vector (11 dims)
     local state = {
-        progress,
-        lateral,
-        headingDot,
-        forwardSpeed,
-        lateralSpeed,
-        velocityMag,
-        distFarLeft,
-        distLeft,
-        distCenter,
-        distRight,
-        distFarRight,
+        progress, lateral, headingDot,
+        forwardSpeed, lateralSpeed, velocityMag,
+        distFarLeft, distLeft, distCenter, distRight, distFarRight,
     }
 
     local info = {
-        progress = progress,
-        lateral = lateral,
-        headingDot = headingDot,
-        forwardSpeed = forwardSpeed,
-        lateralSpeed = lateralSpeed,
-        velocityMag = velocityMag,
-        distFarLeft  = distFarLeft,
-        distLeft     = distLeft,
-        distCenter   = distCenter,
-        distRight    = distRight,
-        distFarRight = distFarRight,
+        progress = progress, lateral = lateral, headingDot = headingDot,
+        forwardSpeed = forwardSpeed, lateralSpeed = lateralSpeed, velocityMag = velocityMag,
+        distFarLeft = distFarLeft, distLeft = distLeft, distCenter = distCenter,
+        distRight = distRight, distFarRight = distFarRight,
         finished = boat:GetAttribute("Finished") == true,
-        crashed = (boat:GetAttribute("Crashed") == true)
-            or (boat:GetAttribute("Sunk") == true),
+        crashed = (boat:GetAttribute("Crashed") == true) or (boat:GetAttribute("Sunk") == true),
     }
 
     return state, info
 end
 
-----------------------------------------------------------------------
--- Public API: getRewardAndDone
-----------------------------------------------------------------------
-
 function Env.getRewardAndDone(prevInfo, info, stepCount)
-    if not prevInfo or not info then
-        return 0, false
-    end
+    if not prevInfo or not info then return 0, false end
 
     local reward = 0
     local done = false
 
-    -- Progress along river
-    local prevProgress = prevInfo.progress or 0
-    local currProgress = info.progress or 0
-    local deltaProgress = currProgress - prevProgress
-    local progressReward = PROGRESS_REWARD_SCALE * deltaProgress
-    reward += progressReward
+    local deltaProgress = (info.progress or 0) - (prevInfo.progress or 0)
+    reward += PROGRESS_REWARD_SCALE * deltaProgress
 
     if DEBUG_REWARD_SUMMARY and (stepCount % 50 == 0) then
-        local lateralAbs = math.abs(info.lateral or 0)
-        local minRay = math.min(
-            info.distFarLeft or 1,
-            info.distLeft or 1,
-            info.distCenter or 1,
-            info.distRight or 1,
-            info.distFarRight or 1
-        )
-        print(string.format(
-            "[RewardDebug] step=%d prog=%.3f dProg=%.3f cent=%.3f minRay=%.3f partial=%.3f",
-            stepCount,
-            currProgress,
-            deltaProgress,
-            lateralAbs,
-            minRay,
-            reward
-        ))
+        print(string.format("[RewardDebug] step=%d dProg=%.3f", stepCount, deltaProgress))
     end
 
-    -- Checkpoint bonuses
     if CHECKPOINT_STEP > 0 then
-        local prevCP = math.floor(prevProgress / CHECKPOINT_STEP)
-        local currCP = math.floor(currProgress / CHECKPOINT_STEP)
+        local prevCP = math.floor((prevInfo.progress or 0) / CHECKPOINT_STEP)
+        local currCP = math.floor((info.progress or 0) / CHECKPOINT_STEP)
         if currCP > prevCP then
             reward += CHECKPOINT_REWARD * (currCP - prevCP)
         end
     end
 
-    -- Velocity shaping
-    local forwardSpeed = info.forwardSpeed or 0
-    local velocityReward = 0
-
-    if forwardSpeed > 0 then
-        local speedDiff = math.abs(forwardSpeed - TARGET_FORWARD_SPEED)
-        velocityReward = VELOCITY_REWARD_SCALE * (1.0 - speedDiff)
+    local fwd = info.forwardSpeed or 0
+    if fwd > 0 then
+        reward += VELOCITY_REWARD_SCALE * (1.0 - math.abs(fwd - TARGET_FORWARD_SPEED))
     else
-        velocityReward = VELOCITY_REWARD_SCALE * forwardSpeed
+        reward += VELOCITY_REWARD_SCALE * fwd
     end
 
-    reward += velocityReward
+    reward += ALIGNMENT_REWARD_SCALE * (info.headingDot or 0)
+    reward += -LATERAL_PENALTY_SCALE * math.abs(info.lateralSpeed or 0)
 
-    -- Heading alignment
-    local headingDot = info.headingDot or 0
-    local alignmentReward = ALIGNMENT_REWARD_SCALE * headingDot
-    reward += alignmentReward
-
-    -- Penalize sideways sliding
-    local lateralSpeed = math.abs(info.lateralSpeed or 0)
-    local lateralPenalty = -LATERAL_PENALTY_SCALE * lateralSpeed
-    reward += lateralPenalty
-
-    -- Centerline shaping
     if CENTER_PENALTY_SCALE > 0 then
-        local lateralAbs = math.abs(info.lateral or 0)
-        local centerPenalty = CENTER_PENALTY_SCALE * (lateralAbs * lateralAbs)
-        reward -= centerPenalty
+        reward -= CENTER_PENALTY_SCALE * (math.abs(info.lateral or 0) ^ 2)
     end
 
-    -- Obstacle proximity shaping
     if OBSTACLE_PROX_PENALTY_SCALE > 0 then
-        local minRay = math.min(
-            info.distFarLeft or 1.0,
-            info.distLeft or 1.0,
-            info.distCenter or 1.0,
-            info.distRight or 1.0,
-            info.distFarRight or 1.0
-        )
-
+        local minRay = math.min(info.distFarLeft or 1, info.distLeft or 1, info.distCenter or 1, info.distRight or 1, info.distFarRight or 1)
         if minRay < OBSTACLE_PROX_THRESHOLD then
-            local t = (OBSTACLE_PROX_THRESHOLD - minRay) / OBSTACLE_PROX_THRESHOLD
-            local proxPenalty = OBSTACLE_PROX_PENALTY_SCALE * t
-            reward -= proxPenalty
+            reward -= OBSTACLE_PROX_PENALTY_SCALE * ((OBSTACLE_PROX_THRESHOLD - minRay) / OBSTACLE_PROX_THRESHOLD)
         end
     end
 
-    -- Time penalty
     reward += STEP_PENALTY
+    if deltaProgress <= 0 and reward > 0 then reward = 0 end
 
-    -- Only allow positive reward if making progress
-    if deltaProgress <= 0 and reward > 0 then
-        reward = 0
-    end
-
-    -- Terminal conditions
     if info.finished and not prevInfo.finished then
         reward += FINISH_REWARD
         done = true

@@ -102,7 +102,7 @@ Config.replayBufferSize  = 50000
 ----------------------------------------------------------------------
 
 -- Visualize raycasts with neon parts
-Config.debugRays = false -- Set to true only when debugging specific episodes
+Config.debugRays = true -- Set to true only when debugging specific episodes
 
 -- Per-step textual debug:
 Config.debugSteps          = false  -- log full state each step
@@ -113,6 +113,6 @@ Config.debugTransitionHttp = false  -- verbose HTTP logging in Agent:onEpisodeEn
 
 -- Turn this ON when you want to collect data for train_dqn.py.
 -- IMPORTANT: Make sure Flask server (log_data.py) is running first!
-Config.enableTransitionLogging = true
+Config.enableTransitionLogging = false
 
 return Config
